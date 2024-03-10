@@ -1,0 +1,8 @@
+# language.yml
+main: #<-- please don´t edit this
+# VVV here you can edit the messages
+
+status_set: "&aYour status has been set to: &r%s"
+status_cleared: "&aYour status has been cleared."
+invalid_status: "&cInvalid status option. Use /status <option>"
+saved_status_message: "&aYour saved status is set to: &r%s"

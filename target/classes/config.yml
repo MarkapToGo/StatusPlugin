@@ -1,0 +1,52 @@
+# Configuration file for StatusPlugin
+
+
+#  ##########################################
+#  ||                                      ||
+#  ||       Status Plugin by Markap        ||
+#  ||                                      ||
+#  ##########################################
+
+
+# Configuration file for StatusPlugin
+
+# Command name to set the status
+command-name: status
+
+# Default status configuration
+default_status_enabled: false
+default_status: "&7[&x&B&3&B&3&B&3&lP&x&A&9&A&9&A&9&ll&x&9&F&9&F&9&F&la&x&9&5&9&5&9&5&ly&x&8&B&8&B&8&B&le&x&8&1&8&1&8&1&lr&7]"
+
+# Format for chat messages
+chat-format: "%status% &r<$$PLAYER$$> "
+
+# Format for the player list (tab list)
+tab-list-format: "&a%status% &r $$PLAYER$$"
+
+
+# Available status options
+status:
+  GHG: "&7[&5GHG&7]"
+  RAINBOW: "&x&F&F&0&0&0&0[&x&F&F&5&F&0&0R&x&F&F&B&F&0&0A&x&B&F&F&F&0&0I&x&0&0&F&F&0&0N&x&0&0&4&0&B&FB&x&2&6&0&0&C&0O&x&5&D&0&0&9&6W&x&9&4&0&0&D&3]"
+  QUESTION: "&x&F&F&E&2&5&9[&x&F&F&C&5&5&5?&x&F&F&A&7&5&1]"
+  SKY: "&3[&x&5&9&F&F&F&8S&x&5&6&F&F&D&5K&x&5&4&F&F&B&1Y&x&5&1&F&F&8&E☁&3]"
+  AFK: "&8[&x&3&8&3&8&3&8A&x&2&8&2&8&2&8F&x&1&8&1&8&1&8K&8]"
+  STYLE: "&f[&x&E&6&E&1&3&4S&x&E&0&B&1&4&5t&x&D&B&8&1&5&6y&x&D&5&5&0&6&6l&x&C&F&2&0&7&7e&f]"
+  HAPPY: "&7[&x&F&F&F&F&F&F｡&x&F&9&F&9&F&9◕&x&F&3&F&3&F&3‿ &x&E&D&E&D&E&D◕&x&E&7&E&7&E&7｡&7]"
+  LOVE: "&c[&x&E&6&4&6&4&6❤ &x&E&B&5&3&5&3L&x&E&F&6&0&6&0O&x&F&4&6&C&6&CV&x&F&8&7&9&7&9E &x&F&D&8&6&8&6❤&c]"
+  KING: "&6[&x&F&F&C&5&5&9☄ &x&F&F&B&A&5&7K&x&F&F&B&0&5&6ö&x&F&F&A&5&5&4n&x&F&F&9&B&5&3i&x&F&F&9&0&5&1g&6]"
+  RICH: "&e[&x&C&3&C&C&2&7R&x&D&2&D&0&3&BI&x&E&2&D&3&5&0C&x&F&1&D&7&6&4H&e]"
+  CAM: "&f[&7CAM&f]"
+  TOXIC: "&a[&x&0&0&F&F&1&C☢ &x&0&1&C&E&1&7T&x&0&3&9&D&1&1o&x&0&4&6&C&0&Cx&x&0&6&3&B&0&6i&x&0&7&0&A&0&1c&a]"
+  KIWI: "&a[&x&C&7&F&7&6&9K&x&9&0&F&A&4&6I&x&5&9&F&C&2&3W&x&2&2&F&F&0&0I&a]"
+  O7: "&f[&do7&f]"
+
+# --> All gradients generated with https://www.birdflop.com/resources/rgb/
+
+# Language configuration
+language:
+  use_only_one: true #please leave this on "true" for now
+  default_language: "main" # please leave this on "main" for now
+
+# i --> when you want to change the messages, go to the language.yml !
+

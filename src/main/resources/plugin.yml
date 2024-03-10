@@ -1,0 +1,19 @@
+name: StatusPlugin
+version: '${project.version}'
+main: de.stylelabor.statusplugin.StatusPlugin
+api-version: '1.14'
+load: STARTUP
+commands:
+  status:
+    description: Set a custom status
+    usage: /status [message]
+  reloadstatus:
+    description: Reload the StatusPlugin configuration
+    usage: /reloadstatus
+  status-clear:
+    description: Clear your current status
+    usage: /status-clear
+permissions:
+  statusplugin.reload:
+    description: Allows reloading the StatusPlugin
+    default: op
