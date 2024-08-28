@@ -140,9 +140,14 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         Player player = event.getPlayer();
         String status = playerStatusMap.getOrDefault(player.getUniqueId(), "");
 
-        // Get the configured chat format from the config, replace placeholders, and apply color codes
-        String chatFormat = getConfig().getString("chat-format", "%status% &r[<$$PLAYER$$>] ");
-        chatFormat = chatFormat.replace("%status%", status);
+        // Get the configured chat format from the config
+        String chatFormat;
+        if (status.isEmpty()) {
+            chatFormat = getConfig().getString("chat-format-no-status", "<$$PLAYER$$> "); // Use a different format when no status
+        } else {
+            chatFormat = getConfig().getString("chat-format", "%status% <$$PLAYER$$> ");
+            chatFormat = chatFormat.replace("%status%", status);
+        }
         chatFormat = chatFormat.replace("$$PLAYER$$", player.getName());
         chatFormat = ChatColor.translateAlternateColorCodes('&', chatFormat);
 
@@ -196,18 +201,28 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         defaultLanguage = config.getString("default-language", "english");
         useOnlyOneLanguage = config.getBoolean("use-only-one-language", true);
 
-        if (config.isConfigurationSection("status")) {
-            Set<String> keys = Objects.requireNonNull(config.getConfigurationSection("status")).getKeys(false);
-            for (String key : keys) {
-                statusOptions.put(key.toUpperCase(), config.getString("status." + key));
-            }
-        }
+        // Load status options from status-options.yml
+        loadStatusOptions();
 
         // Load the default status options
         boolean defaultStatusEnabled = config.getBoolean("default_status_enabled", true);
         String defaultStatus = config.getString("default_status", "DEFAULT");
         if (defaultStatusEnabled) {
             statusOptions.put("DEFAULT", defaultStatus);
+        }
+    }
+
+    private void loadStatusOptions() {
+        File statusOptionsFile = new File(getDataFolder(), "status-options.yml");
+        if (!statusOptionsFile.exists()) {
+            saveResource("status-options.yml", false);
+        }
+        FileConfiguration statusOptionsConfig = YamlConfiguration.loadConfiguration(statusOptionsFile);
+        if (statusOptionsConfig.isConfigurationSection("status")) {
+            Set<String> keys = Objects.requireNonNull(statusOptionsConfig.getConfigurationSection("status")).getKeys(false);
+            for (String key : keys) {
+                statusOptions.put(key.toUpperCase(), statusOptionsConfig.getString("status." + key));
+            }
         }
     }
 
@@ -292,7 +307,6 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         }
 
         player.setPlayerListName(tabListName);
-
     }
 
     private void reloadPlugin() {

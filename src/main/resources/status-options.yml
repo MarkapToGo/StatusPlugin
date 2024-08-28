@@ -1,30 +1,6 @@
-# Configuration file for StatusPlugin
+# status-options.yml
+# This file contains the available status options for the StatusPlugin.
 
-
-#  ##########################################
-#  ||                                      ||
-#  ||       Status Plugin by Markap        ||
-#  ||                                      ||
-#  ##########################################
-
-
-# Configuration file for StatusPlugin
-
-# Command name to set the status
-command-name: status
-
-# Default status configuration
-default_status_enabled: false
-default_status: "&7[&x&B&3&B&3&B&3&lP&x&A&9&A&9&A&9&ll&x&9&F&9&F&9&F&la&x&9&5&9&5&9&5&ly&x&8&B&8&B&8&B&le&x&8&1&8&1&8&1&lr&7]"
-
-# Format for chat messages
-chat-format: "%status% &r<$$PLAYER$$> "
-
-# Format for the player list (tab list)
-tab-list-format: "&a%status% &r $$PLAYER$$"
-
-
-# Available status options
 status:
   GHG: "&7[&5GHG&7]"
   RAINBOW: "&x&F&F&0&0&0&0[&x&F&F&5&F&0&0R&x&F&F&B&F&0&0A&x&B&F&F&F&0&0I&x&0&0&F&F&0&0N&x&0&0&4&0&B&FB&x&2&6&0&0&C&0O&x&5&D&0&0&9&6W&x&9&4&0&0&D&3]"
@@ -42,11 +18,4 @@ status:
   O7: "&f[&do7&f]"
 
 # --> All gradients generated with https://www.birdflop.com/resources/rgb/
-
-# Language configuration
-language:
-  use_only_one: true #please leave this on "true" for now
-  default_language: "main" # please leave this on "main" for now
-
-# i --> when you want to change the messages, go to the language.yml !
-
+# --> All emojis are from https://hypixel.net/threads/%E3%83%84symbols%E2%98%BB.787483/
