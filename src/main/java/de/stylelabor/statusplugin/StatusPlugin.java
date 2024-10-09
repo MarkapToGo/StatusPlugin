@@ -44,9 +44,17 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         loadPlayerStatuses(); // Load the statuses of all players from player-status.yml
         getServer().getPluginManager().registerEvents(this, this);
         Objects.requireNonNull(getCommand(commandName)).setTabCompleter(this);
-        int pluginId = 20901; // <-- Replace with the id of your plugin!
+        int pluginId = 20901;
         //noinspection unused
         Metrics metrics = new Metrics(this, pluginId);
+
+        // Register PlaceholderAPI placeholder
+        if (Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null) {
+            new StatusPlaceholder(this).register();
+            getLogger().info("PlaceholderAPI placeholder registered successfully.");
+        } else {
+            getLogger().warning("PlaceholderAPI not found. Placeholder registration skipped.");
+        }
     }
 
     /**
@@ -125,18 +133,24 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         if (getConfig().getBoolean("default_status_enabled", true)) {
             String defaultStatus = getConfig().getString("default_status", "DEFAULT");
             playerStatusMap.put(player.getUniqueId(), defaultStatus);
-            updatePlayerTabList();
 
             // Save the default status to player-status.yml
             playerStatusConfig.set(player.getUniqueId().toString(), defaultStatus);
             savePlayerStatusConfig();
-        } else {
+        }
+
+        // Update tab list if tab styling is enabled
+        if (getConfig().getBoolean("tab-styling-enabled", true)) {
             updatePlayerTabList();
         }
     }
 
     @EventHandler
     public void onPlayerChat(AsyncPlayerChatEvent event) {
+        if (!getConfig().getBoolean("chat-styling-enabled", true)) {
+            return; // Skip chat styling if disabled
+        }
+
         Player player = event.getPlayer();
         String status = playerStatusMap.getOrDefault(player.getUniqueId(), "");
 
@@ -281,6 +295,9 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     }
 
     private void updatePlayerTabList() {
+        if (!getConfig().getBoolean("tab-styling-enabled", true)) {
+            return; // Skip tab styling if disabled
+        }
 
         // Get a list of all online players
         List<Player> players = new ArrayList<>(Bukkit.getOnlinePlayers());
@@ -292,6 +309,10 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             player.setDisplayName(invisiblePrefix + player.getName());
             updatePlayerTabListName(player);
         }
+    }
+
+    public String getPlayerStatus(UUID uuid) {
+        return playerStatusMap.getOrDefault(uuid, "");
     }
 
     private void updatePlayerTabListName(Player player) {

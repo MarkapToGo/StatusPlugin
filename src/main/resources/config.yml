@@ -25,6 +25,12 @@ chat-format-no-status: "<$$PLAYER$$> "
 tab-list-format: "&a%status% &r $$PLAYER$$"
 
 
+# Enable or disable tab styling
+tab-styling-enabled: true
+
+# Enable or disable chat styling
+chat-styling-enabled: true
+
 # Available status options
 # You can add more status options in the status-options.yml
 
