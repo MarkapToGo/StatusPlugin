@@ -55,6 +55,10 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         } else {
             getLogger().warning("PlaceholderAPI not found. Placeholder registration skipped.");
         }
+
+        // Check for the latest version
+        ModrinthVersionChecker.checkVersion();
+
     }
 
     /**
@@ -76,6 +80,12 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     public boolean onCommand(@NotNull CommandSender sender, Command command, @NotNull String label, String[] args) {
         if (command.getName().equalsIgnoreCase(commandName) && sender instanceof Player) {
             Player player = (Player) sender;
+
+            if (getConfig().getBoolean("only-admin-change", false) && !player.hasPermission("statusplugin.admin")) {
+                String message = getConfig().getString("only-admin-change-message", "&cOnly admins can change statuses.");
+                player.sendMessage(ChatColor.translateAlternateColorCodes('&', message));
+                return true;
+            }
 
             if (args.length > 0) {
                 String status = statusOptions.get(args[0].toUpperCase());
@@ -120,6 +130,31 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             savePlayerStatusConfig();
 
             return true;
+        } else if (command.getName().equalsIgnoreCase("status-admin") && sender.hasPermission("statusplugin.admin")) {
+            if (args.length == 2) {
+                Player targetPlayer = Bukkit.getPlayer(args[0]);
+                if (targetPlayer != null) {
+                    String status = statusOptions.get(args[1].toUpperCase());
+                    if (status != null) {
+                        playerStatusMap.put(targetPlayer.getUniqueId(), status);
+                        String message = getLanguageText(targetPlayer, "status_set", "&aYour status has been set to: &r%s");
+                        targetPlayer.sendMessage(ChatColor.translateAlternateColorCodes('&', String.format(message, status)));
+                        updatePlayerTabList();
+
+                        // Save the player status to player-status.yml
+                        playerStatusConfig.set(targetPlayer.getUniqueId().toString(), status);
+                        savePlayerStatusConfig();
+                        sender.sendMessage(ChatColor.GREEN + "Status of " + targetPlayer.getName() + " has been set to: " + ChatColor.translateAlternateColorCodes('&', status));
+                    } else {
+                        sender.sendMessage(ChatColor.RED + "Invalid status option. Use /status-admin <playerName> <status>");
+                    }
+                } else {
+                    sender.sendMessage(ChatColor.RED + "Player not found.");
+                }
+            } else {
+                sender.sendMessage(ChatColor.RED + "Usage: /status-admin <playerName> <status>");
+            }
+            return true;
         }
 
         return false;
@@ -137,6 +172,17 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             // Save the default status to player-status.yml
             playerStatusConfig.set(player.getUniqueId().toString(), defaultStatus);
             savePlayerStatusConfig();
+        }
+
+        // Send hardcoded admin join message if the player has the admin permission and the message is enabled
+        if (player.hasPermission("statusplugin.admin") && getConfig().getBoolean("admin-join-message-enabled", false)) {
+            String adminJoinMessage = "&aThank you for using this status plugin. When you want to support me, please download my plugin from Modrinth! https://modrinth.com/plugin/statusplugin-like-in-craftattack";
+            player.sendMessage(ChatColor.translateAlternateColorCodes('&', adminJoinMessage));
+        }
+
+        // Check for the latest version and send message to admins
+        if (player.hasPermission("statusplugin.admin")) {
+            ModrinthVersionChecker.checkVersion();
         }
 
         // Update tab list if tab styling is enabled
@@ -195,11 +241,32 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String alias, String[] args) {
         List<String> completions = new ArrayList<>();
 
-        if (args.length == 1) {
-            String prefix = args[0].toUpperCase();
-            for (String option : statusOptions.keySet()) {
-                if (option.startsWith(prefix)) {
-                    completions.add(option);
+        if (command.getName().equalsIgnoreCase("status")) {
+            if (args.length == 1) {
+                // Auto-complete status options
+                String prefix = args[0].toUpperCase();
+                for (String option : statusOptions.keySet()) {
+                    if (option.startsWith(prefix)) {
+                        completions.add(option);
+                    }
+                }
+            }
+        } else if (command.getName().equalsIgnoreCase("status-admin")) {
+            if (args.length == 1) {
+                // Auto-complete player names
+                String prefix = args[0].toLowerCase();
+                for (Player player : Bukkit.getOnlinePlayers()) {
+                    if (player.getName().toLowerCase().startsWith(prefix)) {
+                        completions.add(player.getName());
+                    }
+                }
+            } else if (args.length == 2) {
+                // Auto-complete status options
+                String prefix = args[1].toUpperCase();
+                for (String option : statusOptions.keySet()) {
+                    if (option.startsWith(prefix)) {
+                        completions.add(option);
+                    }
                 }
             }
         }

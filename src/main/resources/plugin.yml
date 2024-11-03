@@ -13,7 +13,14 @@ commands:
   status-clear:
     description: Clear your current status
     usage: /status-clear
+  status-admin:
+    description: Set a custom status for a specific player
+    usage: /status-admin <playerName> <status>
+
 permissions:
   statusplugin.reload:
     description: Allows reloading the StatusPlugin
+    default: op
+  statusplugin.admin:
+    description: Allows using the status-admin command
     default: op

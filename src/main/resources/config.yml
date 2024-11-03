@@ -1,5 +1,6 @@
 # Configuration file for StatusPlugin
-
+# Version to compare
+current_version: "4.8"
 
 #  ##########################################
 #  ||                                      ||
@@ -24,6 +25,11 @@ chat-format-no-status: "<$$PLAYER$$> "
 # Format for the player list (tab list)
 tab-list-format: "&a%status% &r $$PLAYER$$"
 
+# Allow only admins to change the status
+only-admin-change: false
+# Message to display when only admins can change statuses
+only-admin-change-message: "&cOnly admins can change statuses."
+
 
 # Enable or disable tab styling
 tab-styling-enabled: true
@@ -33,6 +39,9 @@ chat-styling-enabled: true
 
 # Available status options
 # You can add more status options in the status-options.yml
+
+# Enable or disable the admin join info message
+admin-join-message-enabled: false
 
 # Language configuration
 language:
