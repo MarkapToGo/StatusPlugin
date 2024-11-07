@@ -1,6 +1,6 @@
 # Configuration file for StatusPlugin
 # Version to compare
-current_version: "4.8"
+current_version: "4.9"
 
 #  ##########################################
 #  ||                                      ||
@@ -23,7 +23,7 @@ chat-format: "%status% &r<$$PLAYER$$> "
 chat-format-no-status: "<$$PLAYER$$> "
 
 # Format for the player list (tab list)
-tab-list-format: "&a%status% &r $$PLAYER$$"
+tab-list-format: "&a%status% &r$$PLAYER$$"
 
 # Allow only admins to change the status
 only-admin-change: false

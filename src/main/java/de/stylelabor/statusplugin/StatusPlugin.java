@@ -1,5 +1,8 @@
 package de.stylelabor.statusplugin;
 
+import me.neznamy.tab.api.TabAPI;
+import me.neznamy.tab.api.TabPlayer;
+import me.neznamy.tab.api.tablist.TabListFormatManager;
 import net.md_5.bungee.api.chat.BaseComponent;
 import net.md_5.bungee.api.chat.ClickEvent;
 import net.md_5.bungee.api.chat.TextComponent;
@@ -31,6 +34,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     private final HashMap<String, String> statusOptions = new HashMap<>();
     private FileConfiguration languageConfig;
     private FileConfiguration playerStatusConfig;
+    private boolean isTabPluginPresent;
     private boolean useOnlyOneLanguage;
     private String defaultLanguage;
 
@@ -47,6 +51,8 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         int pluginId = 20901;
         //noinspection unused
         Metrics metrics = new Metrics(this, pluginId);
+
+        isTabPluginPresent = Bukkit.getPluginManager().getPlugin("TAB") != null;
 
         // Register PlaceholderAPI placeholder
         if (Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null) {
@@ -382,6 +388,8 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         return playerStatusMap.getOrDefault(uuid, "");
     }
 
+
+
     private void updatePlayerTabListName(Player player) {
         String status = playerStatusMap.getOrDefault(player.getUniqueId(), "");
         String playerName = player.getName();
@@ -394,8 +402,23 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             tabListName = ChatColor.translateAlternateColorCodes('&', tabListName);
         }
 
-        player.setPlayerListName(tabListName);
+        if (isTabPluginPresent) {
+            // Update the tab list name using TAB API
+            TabPlayer tabPlayer = TabAPI.getInstance().getPlayer(player.getUniqueId());
+            TabListFormatManager formatManager = TabAPI.getInstance().getTabListFormatManager();
+            if (tabPlayer != null && formatManager != null) {
+                formatManager.setPrefix(tabPlayer, null); // Reset prefix
+                formatManager.setName(tabPlayer, tabListName); // Set custom name
+                formatManager.setSuffix(tabPlayer, null); // Reset suffix
+            }
+        } else {
+            // Fallback to default method
+            player.setPlayerListName(tabListName);
+        }
     }
+
+
+
 
     private void reloadPlugin() {
         reloadConfig();
