@@ -44,21 +44,22 @@ public class ModrinthVersionChecker {
             // Compare versions
             String newestVersionNumber = newestVersion.getString("version_number");
             String message;
+            String prefix = ChatColor.DARK_GRAY + "[" + ChatColor.GRAY + "StatusPlugin" + ChatColor.DARK_GRAY + "] " + ChatColor.RESET;
             if (newestVersionNumber.equals(currentVersion)) {
-                message = ChatColor.WHITE + "You are using the latest version: " + currentVersion;
+                message = prefix + ChatColor.WHITE + "You are using the latest version: " + currentVersion;
             } else if (isVersionHigher(newestVersionNumber, currentVersion)) {
                 JSONArray filesArray = newestVersion.getJSONArray("files");
                 String downloadLink = filesArray.getJSONObject(0).getString("url");
-                message = ChatColor.RED + "A new version is available: " + newestVersionNumber + "\n" +
+                message = prefix + ChatColor.RED + "A new version is available: " + newestVersionNumber + "\n" +
                         ChatColor.WHITE + "Current version: " + currentVersion + "\n" +
                         ChatColor.WHITE + "Download it here: " + ChatColor.UNDERLINE + downloadLink;
             } else {
-                message = ChatColor.WHITE + "You are using a higher version: " + currentVersion;
+                message = prefix + ChatColor.WHITE + "You are using a higher version: " + currentVersion;
             }
 
             // Send message to admins
             for (Player player : Bukkit.getOnlinePlayers()) {
-                if (player.hasPermission("statusplugin.admin")) {
+                if (player.isOp() || player.hasPermission("statusplugin.admin")) {
                     player.sendMessage(ChatColor.translateAlternateColorCodes('&', message));
                 }
             }

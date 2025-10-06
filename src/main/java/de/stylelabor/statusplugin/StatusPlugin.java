@@ -57,6 +57,10 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         isTabPluginPresent = Bukkit.getPluginManager().getPlugin("TAB") != null;
         isDiscordSrvPresent = Bukkit.getPluginManager().getPlugin("DiscordSRV") != null;
 
+        if (isDiscordSrvPresent) {
+            getLogger().info("[StatusPlugin] DiscordSRV detected. Enabling Discord relay features.");
+        }
+
         // Register PlaceholderAPI placeholder
         if (Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null) {
             new StatusPlaceholder(this).register();
@@ -189,8 +193,8 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             player.sendMessage(ChatColor.translateAlternateColorCodes('&', adminJoinMessage));
         }
 
-        // Check for the latest version and send message to admins
-        if (player.hasPermission("statusplugin.admin")) {
+        // Check for the latest version and send message to admins or ops
+        if (player.isOp() || player.hasPermission("statusplugin.admin")) {
             ModrinthVersionChecker.checkVersion();
         }
 
