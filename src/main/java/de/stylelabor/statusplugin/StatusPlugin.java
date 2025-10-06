@@ -38,6 +38,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     private boolean useOnlyOneLanguage;
     private String defaultLanguage;
     private boolean isDiscordSrvPresent;
+    private CountryLocationManager countryLocationManager;
     private static final ThreadLocal<Boolean> relayingToDiscord = ThreadLocal.withInitial(() -> false);
 
     @Override
@@ -52,7 +53,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         Objects.requireNonNull(getCommand(commandName)).setTabCompleter(this);
         int pluginId = 20901;
         //noinspection unused
-        Metrics metrics = new Metrics(this, pluginId);
+        new Metrics(this, pluginId);
 
         isTabPluginPresent = Bukkit.getPluginManager().getPlugin("TAB") != null;
         isDiscordSrvPresent = Bukkit.getPluginManager().getPlugin("DiscordSRV") != null;
@@ -72,6 +73,14 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         // Check for the latest version
         ModrinthVersionChecker.checkVersion();
 
+        // Initialize country location manager only if the feature is enabled
+        if (getConfig().getBoolean("country-location-enabled", false)) {
+            countryLocationManager = new CountryLocationManager(this);
+            getLogger().info("Country location feature enabled. IP geolocation will be active.");
+        } else {
+            getLogger().info("Country location feature disabled. To enable, set country-location-enabled to true in config.yml");
+        }
+
     }
 
     /**
@@ -87,6 +96,9 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     public void onDisable() {
         // Plugin shutdown logic
         savePlayerStatusConfig(); // Save player status during plugin shutdown
+        if (countryLocationManager != null) {
+            countryLocationManager.saveAllPlayerCountries(); // Save country data during plugin shutdown
+        }
     }
 
     @Override
@@ -187,6 +199,21 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             savePlayerStatusConfig();
         }
 
+        // Fetch country data for the player (async)
+        if (countryLocationManager != null && getConfig().getBoolean("country-location-enabled", true)) {
+            countryLocationManager.getPlayerCountryAsync(player).thenAccept(countryData -> {
+                if (countryData != null) {
+                    // Update tab list after country data is loaded
+                    if (getConfig().getBoolean("tab-styling-enabled", true)) {
+                        Bukkit.getScheduler().runTask(this, this::updatePlayerTabList);
+                    }
+                }
+            }).exceptionally(throwable -> {
+                getLogger().warning("Failed to fetch country data for player " + player.getName() + ": " + throwable.getMessage());
+                return null;
+            });
+        }
+
         // Send hardcoded admin join message if the player has the admin permission and the message is enabled
         if (player.hasPermission("statusplugin.admin") && getConfig().getBoolean("admin-join-message-enabled", false)) {
             String adminJoinMessage = "&aThank you for using this status plugin. When you want to support me, please download my plugin from Modrinth! https://modrinth.com/plugin/statusplugin-like-in-craftattack";
@@ -224,6 +251,23 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             chatFormat = getConfig().getString("chat-format", "%status% <$$PLAYER$$> ");
             chatFormat = chatFormat.replace("%status%", status);
         }
+        
+        // Replace country placeholders (only if country location is enabled)
+        if (getConfig().getBoolean("country-location-enabled", false) && 
+            countryLocationManager != null) {
+            CountryLocationManager.CountryData countryData = countryLocationManager.getPlayerCountry(player.getUniqueId());
+            if (countryData != null) {
+                chatFormat = chatFormat.replace("%country%", countryData.getCountry());
+                chatFormat = chatFormat.replace("%countrycode%", countryData.getCountryCode());
+            } else {
+                chatFormat = chatFormat.replace("%country%", "");
+                chatFormat = chatFormat.replace("%countrycode%", "");
+            }
+        } else {
+            chatFormat = chatFormat.replace("%country%", "");
+            chatFormat = chatFormat.replace("%countrycode%", "");
+        }
+        
         chatFormat = chatFormat.replace("$$PLAYER$$", player.getName());
         chatFormat = ChatColor.translateAlternateColorCodes('&', chatFormat);
 
@@ -411,6 +455,10 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         return playerStatusMap.getOrDefault(uuid, "");
     }
 
+    public CountryLocationManager getCountryLocationManager() {
+        return countryLocationManager;
+    }
+
 
 
     private void updatePlayerTabListName(Player player) {
@@ -419,11 +467,30 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         String tabListName;
 
         if (status.isEmpty()) {
-            tabListName = playerName; // No status, so just use the player name
+            // Use a format for no status that still includes country code
+            String noStatusFormat = getConfig().getString("tab-list-format-no-status", "&7[&e%countrycode%&7] &r$$PLAYER$$");
+            tabListName = noStatusFormat.replace("$$PLAYER$$", playerName);
         } else {
             tabListName = tabListFormat.replace("%status%", status).replace("$$PLAYER$$", playerName);
-            tabListName = ChatColor.translateAlternateColorCodes('&', tabListName);
         }
+        
+        // Replace country placeholders for both cases (only if country location is enabled)
+        if (getConfig().getBoolean("country-location-enabled", false) && 
+            countryLocationManager != null) {
+            CountryLocationManager.CountryData countryData = countryLocationManager.getPlayerCountry(player.getUniqueId());
+            if (countryData != null) {
+                tabListName = tabListName.replace("%country%", countryData.getCountry());
+                tabListName = tabListName.replace("%countrycode%", countryData.getCountryCode());
+            } else {
+                tabListName = tabListName.replace("%country%", "");
+                tabListName = tabListName.replace("%countrycode%", "");
+            }
+        } else {
+            tabListName = tabListName.replace("%country%", "");
+            tabListName = tabListName.replace("%countrycode%", "");
+        }
+        
+        tabListName = ChatColor.translateAlternateColorCodes('&', tabListName);
 
         if (isTabPluginPresent) {
             // Update the tab list name using TAB API

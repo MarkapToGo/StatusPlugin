@@ -47,6 +47,26 @@ public class StatusPlaceholder extends PlaceholderExpansion {
         if (identifier.equals("status")) {
             String status = plugin.getPlayerStatus(player.getUniqueId());
             return ChatColor.translateAlternateColorCodes('&', status);
+        } else if (identifier.equals("country")) {
+            if (!plugin.getConfig().getBoolean("country-location-enabled", false)) {
+                return "";
+            }
+            CountryLocationManager countryManager = plugin.getCountryLocationManager();
+            if (countryManager == null) {
+                return "";
+            }
+            CountryLocationManager.CountryData countryData = countryManager.getPlayerCountry(player.getUniqueId());
+            return countryData != null ? countryData.getCountry() : "";
+        } else if (identifier.equals("countrycode")) {
+            if (!plugin.getConfig().getBoolean("country-location-enabled", false)) {
+                return "";
+            }
+            CountryLocationManager countryManager = plugin.getCountryLocationManager();
+            if (countryManager == null) {
+                return "";
+            }
+            CountryLocationManager.CountryData countryData = countryManager.getPlayerCountry(player.getUniqueId());
+            return countryData != null ? countryData.getCountryCode() : "";
         }
 
         return null;

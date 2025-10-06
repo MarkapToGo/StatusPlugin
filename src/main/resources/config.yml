@@ -1,55 +1,111 @@
-# Configuration file for StatusPlugin
-# Version to compare
-current_version: "5.0"
+###############################################
+# StatusPlugin Configuration                    
+# Author: Markap                                
+###############################################
 
-#  ##########################################
-#  ||                                      ||
-#  ||       Status Plugin by Markap        ||
-#  ||                                      ||
-#  ##########################################
+# -------------------------------------------------
+# Version                                          
+# Used for comparing against latest plugin version 
+# -------------------------------------------------
+current_version: "5.1"
 
-
-# Configuration file for StatusPlugin
-
-# Command name to set the status
+# -------------------------------------------------
+# Command                                           
+# Primary command to set/change player status       
+# -------------------------------------------------
 command-name: status
 
-# Default status configuration
+# -------------------------------------------------
+# Defaults                                          
+# Default status settings                           
+# -------------------------------------------------
 default_status_enabled: false
 default_status: "&8[&7Player&8]&r" #--> [Player]
 
-# Format for chat messages
-chat-format: "%status% &r<$$PLAYER$$> "
-chat-format-no-status: "<$$PLAYER$$> "
+# -------------------------------------------------
+# Chat Formatting                                   
+# Placeholders: %status%, %country%, %countrycode%, $$PLAYER$$                
+# -------------------------------------------------
+chat-format: "%status% &r<$$PLAYER$$> &e%countrycode%"
+chat-format-no-status: "&r<$$PLAYER$$> &e%countrycode%"
 
-# Format for the player list (tab list)
-tab-list-format: "&a%status% &r$$PLAYER$$"
+# -------------------------------------------------
+# Tab List Formatting                               
+# Placeholders: %status%, %country%, %countrycode%, $$PLAYER$$
+# -------------------------------------------------
+tab-list-format: "&a%status% &r$$PLAYER$$ &e%countrycode% "
+tab-list-format-no-status: "&r$$PLAYER$$ &e%countrycode% "
 
-# Allow only admins to change the status
+# -------------------------------------------------
+# Permissions                                       
+# Control who can change status                     
+# -------------------------------------------------
 only-admin-change: false
-# Message to display when only admins can change statuses
 only-admin-change-message: "&cOnly admins can change statuses."
 
-
-# Enable or disable tab styling
+# -------------------------------------------------
+# Features                                          
+# Toggle styling and integrations                   
+# -------------------------------------------------
 tab-styling-enabled: true
-
-# Enable or disable chat styling
 chat-styling-enabled: true
+discordsrv-relay-enabled: true # Relay chat to Discord via DiscordSRV (if present)
 
-# Relay chat to Discord via DiscordSRV (if present)
-discordsrv-relay-enabled: true
+# -------------------------------------------------
+# Country Location Feature                          
+# IP-based country detection and display            
+# ⚠️  DISABLED BY DEFAULT - ENABLE TO USE COUNTRY FEATURES
+# -------------------------------------------------
+# This feature automatically detects player countries based on their IP address
+# and can display country codes in chat, tab list, and via PlaceholderAPI
+#
+# APIs used (with automatic fallback):
+# - Primary: http://ip-api.com (free, 45 requests/minute)
+# - Fallback: https://api.iplocation.net (free, unlimited)
+#
+# Data is cached in player-countries.yml to avoid repeated API calls
+# -------------------------------------------------
+country-location-enabled: false # Master switch: Enable/disable entire country feature
+                                # When false: No IP fetching, no API calls, no data collection, no display
+                                # When true: Fetches country data on first join, displays in chat/tab, caches for future use
 
-# Available status options
-# You can add more status options in the status-options.yml
+country-cache-enabled: true     # Cache switch: Save country data to avoid repeated API calls
+                                # When true: Saves country data to player-countries.yml
+                                # When false: Always fetches fresh data (not recommended)
 
-# Enable or disable the admin join info message
-admin-join-message-enabled: false
+# -------------------------------------------------
+# Status Options                                    
+# Add more in: status-options.yml                   
+# -------------------------------------------------
 
-# Language configuration
+# -------------------------------------------------
+# Admin Messages                                    
+# -------------------------------------------------
+admin-join-message-enabled: true
+
+# -------------------------------------------------
+# Language                                          
+# To edit messages, see: language.yml               
+# -------------------------------------------------
 language:
-  use_only_one: true #please leave this on "true" for now
+  use_only_one: true # please leave this on "true" for now
   default_language: "main" # please leave this on "main" for now
 
-# i --> when you want to change the messages, go to the language.yml !
+# Tip: To change the actual message contents, edit language.yml
+
+# -------------------------------------------------
+# PlaceholderAPI Integration                        
+# Use these placeholders in other plugins            
+# -------------------------------------------------
+# %statusplugin_status%     - Player's current status (always works)
+#                            Example: "[VIP]" or "" (empty if no status)
+#
+# %statusplugin_country%    - Player's country name (requires country-location-enabled: true)
+#                            Example: "Canada", "United States", "Germany"
+#
+# %statusplugin_countrycode% - Player's country code (requires country-location-enabled: true)
+#                            Example: "CA", "US", "DE"
+#
+#
+# ⚠️  Country placeholders return empty strings when country-location-enabled is false
 
