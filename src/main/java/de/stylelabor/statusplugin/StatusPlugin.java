@@ -206,6 +206,9 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
 
     @EventHandler
     public void onPlayerChat(AsyncPlayerChatEvent event) {
+        if (Boolean.TRUE.equals(relayingToDiscord.get())) {
+            return; // Skip formatting/broadcast when relaying to avoid duplicates
+        }
         if (!getConfig().getBoolean("chat-styling-enabled", true)) {
             return; // Skip chat styling if disabled
         }
@@ -249,15 +252,17 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         // Cancel the original chat event
         event.setCancelled(true);
 
-        // Relay to DiscordSRV by firing a synthetic chat event with no recipients
+        // Relay to DiscordSRV by firing a synthetic chat event on the main thread with no recipients
         if (isDiscordSrvPresent && getConfig().getBoolean("discordsrv-relay-enabled", true) && !Boolean.TRUE.equals(relayingToDiscord.get())) {
-            try {
-                relayingToDiscord.set(true);
-                AsyncPlayerChatEvent forward = new AsyncPlayerChatEvent(false, player, event.getMessage(), new java.util.HashSet<>());
-                Bukkit.getPluginManager().callEvent(forward);
-            } finally {
-                relayingToDiscord.set(false);
-            }
+            Bukkit.getScheduler().runTask(this, () -> {
+                try {
+                    relayingToDiscord.set(true);
+                    AsyncPlayerChatEvent forward = new AsyncPlayerChatEvent(false, player, event.getMessage(), new java.util.HashSet<>());
+                    Bukkit.getPluginManager().callEvent(forward);
+                } finally {
+                    relayingToDiscord.set(false);
+                }
+            });
         }
     }
 
