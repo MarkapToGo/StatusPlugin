@@ -37,6 +37,8 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     private boolean isTabPluginPresent;
     private boolean useOnlyOneLanguage;
     private String defaultLanguage;
+    private boolean isDiscordSrvPresent;
+    private static final ThreadLocal<Boolean> relayingToDiscord = ThreadLocal.withInitial(() -> false);
 
     @Override
     public void onEnable() {
@@ -53,6 +55,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         Metrics metrics = new Metrics(this, pluginId);
 
         isTabPluginPresent = Bukkit.getPluginManager().getPlugin("TAB") != null;
+        isDiscordSrvPresent = Bukkit.getPluginManager().getPlugin("DiscordSRV") != null;
 
         // Register PlaceholderAPI placeholder
         if (Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null) {
@@ -241,6 +244,17 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
 
         // Cancel the original chat event
         event.setCancelled(true);
+
+        // Relay to DiscordSRV by firing a synthetic chat event with no recipients
+        if (isDiscordSrvPresent && getConfig().getBoolean("discordsrv-relay-enabled", true) && !Boolean.TRUE.equals(relayingToDiscord.get())) {
+            try {
+                relayingToDiscord.set(true);
+                AsyncPlayerChatEvent forward = new AsyncPlayerChatEvent(false, player, event.getMessage(), new java.util.HashSet<>());
+                Bukkit.getPluginManager().callEvent(forward);
+            } finally {
+                relayingToDiscord.set(false);
+            }
+        }
     }
 
     @Override

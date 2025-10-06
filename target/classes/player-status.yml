@@ -1,0 +1,8 @@
+# player-status.yml
+# This file will store the status for each player.
+069a79f4-44e9-4726-a5be-fca90e38aaf5: '&7[&cNOTCH&7]' #<-- this is the UUID of Notch
+# (THIS IS AN EXAMPLE HOW THE PLUGIN WILL SAVE THE STATUS OF A PLAYER)
+# Don´t change something here, when you don´t know exactly what you do!
+#
+
+
