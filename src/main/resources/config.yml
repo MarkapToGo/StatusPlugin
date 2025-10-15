@@ -7,7 +7,7 @@
 # Version                                          
 # Used for comparing against latest plugin version 
 # -------------------------------------------------
-current_version: "5.2"
+current_version: "5.3"
 
 # -------------------------------------------------
 # Command                                           
@@ -26,15 +26,15 @@ default_status: "&8[&7Player&8]&r" #--> [Player]
 # Chat Formatting                                   
 # Placeholders: %status%, %country%, %countrycode%, %deaths%, $$PLAYER$$                
 # -------------------------------------------------
-chat-format: "%status% &r<$$PLAYER$$> &e%countrycode% &c%deaths%"
-chat-format-no-status: "&r<$$PLAYER$$> &e%countrycode% &c%deaths%"
+chat-format: "%status% &r<$$PLAYER$$> &e%countrycode%"
+chat-format-no-status: "&r<$$PLAYER$$> &e%countrycode%"
 
 # -------------------------------------------------
 # Tab List Formatting                               
 # Placeholders: %status%, %country%, %countrycode%, %deaths%, $$PLAYER$$
 # -------------------------------------------------
-tab-list-format: "&a%status% &r$$PLAYER$$ &e%countrycode% &c%deaths%"
-tab-list-format-no-status: "&r$$PLAYER$$ &e%countrycode% &c%deaths%"
+tab-list-format: "&a%status% &r$$PLAYER$$ &e%countrycode% &8[&c☠ %deaths%&8]"
+tab-list-format-no-status: "&r$$PLAYER$$ &e%countrycode% &8[&c☠ %deaths%&8]"
 
 # -------------------------------------------------
 # Permissions                                       

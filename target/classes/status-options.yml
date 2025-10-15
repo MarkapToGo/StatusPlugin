@@ -2,6 +2,7 @@
 # This file contains the available status options for the StatusPlugin.
 
 status:
+  ADMIN: "&4[&lADMIN&4]"
   GHG: "&7[&5GHG&7]"
   RAINBOW: "&x&F&F&0&0&0&0[&x&F&F&5&F&0&0R&x&F&F&B&F&0&0A&x&B&F&F&F&0&0I&x&0&0&F&F&0&0N&x&0&0&4&0&B&FB&x&2&6&0&0&C&0O&x&5&D&0&0&9&6W&x&9&4&0&0&D&3]"
   QUESTION: "&x&F&F&E&2&5&9[&x&F&F&C&5&5&5?&x&F&F&A&7&5&1]"
@@ -16,6 +17,15 @@ status:
   TOXIC: "&a[&x&0&0&F&F&1&C☢ &x&0&1&C&E&1&7T&x&0&3&9&D&1&1o&x&0&4&6&C&0&Cx&x&0&6&3&B&0&6i&x&0&7&0&A&0&1c&a]"
   KIWI: "&a[&x&C&7&F&7&6&9K&x&9&0&F&A&4&6I&x&5&9&F&C&2&3W&x&2&2&F&F&0&0I&a]"
   O7: "&f[&do7&f]"
+  REDSTONE: "&8[&x&F&A&3&6&3&6R&x&F&0&3&A&3&Ae&x&E&7&3&F&3&Fd&x&D&D&4&3&4&3s&x&D&3&4&7&4&7t&x&C&9&4&B&4&Bo&x&C&0&5&0&5&0n&x&B&6&5&4&5&4e&8]"
+  STAR: "&7[&x&F&A&E&5&3&6★&7]"
+  BAMBUS: "&7[&x&4&F&E&5&6&BB&x&3&F&D&B&5&8a&x&2&F&D&0&4&5m&x&2&0&C&6&3&2b&x&1&0&B&B&1&Fu&x&0&0&B&1&0&Cs&7]"
+  STONE: "&8[&x&B&E&B&E&B&ES&x&A&B&A&C&A&Bt&x&9&8&9&A&9&8o&x&8&4&8&7&8&5n&x&7&1&7&5&7&2e&8]"
+  SMILEY: "&8[&x&3&0&9&8&C&1ツ&8]"
+  SHADOW: "&7[&x&6&9&6&9&6&9S&x&5&D&5&D&5&Eh&x&5&2&5&1&5&2a&x&4&6&4&6&4&7d&x&3&B&3&A&3&Bo&x&2&F&2&E&3&0w&7]"
+  HAPPY2: "&8[&x&B&F&A&7&6&5☻&8]"
+  CHERRY: "&7[&x&9&8&6&3&E&7C&x&A&A&7&7&E&5h&x&B&C&8&B&E&3e&x&C&E&9&E&E&2r&x&E&0&B&2&E&0r&x&F&2&C&6&D&Ey&7]"
+
 
 # --> All gradients generated with https://www.birdflop.com/resources/rgb/
 # --> All emojis are from https://hypixel.net/threads/%E3%83%84symbols%E2%98%BB.787483/

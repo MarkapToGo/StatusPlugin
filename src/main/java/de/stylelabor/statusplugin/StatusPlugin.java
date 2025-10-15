@@ -131,8 +131,13 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             }
 
             if (args.length > 0) {
-                String status = statusOptions.get(args[0].toUpperCase());
+                String statusKey = args[0].toUpperCase(Locale.ROOT);
+                String status = statusOptions.get(statusKey);
                 if (status != null) {
+                    if ("ADMIN".equals(statusKey) && !player.isOp() && !player.hasPermission("statusplugin.admin")) {
+                        player.sendMessage(ChatColor.RED + "Only admins can use the ADMIN status.");
+                        return true;
+                    }
                     playerStatusMap.put(player.getUniqueId(), status);
                     String message = getLanguageText(player, "status_set", "&aYour status has been set to: &r%s");
                     player.sendMessage(ChatColor.translateAlternateColorCodes('&', String.format(message, status)));
@@ -319,6 +324,10 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
                 sender.sendMessage(ChatColor.RED + "Invalid status option. Use /status-admin " + (subCommand.equals("set") ? "set <player> <status>" : "<player> <status>"));
                 return true;
             }
+            if ("ADMIN".equals(statusKey) && !targetPlayer.isOp() && !targetPlayer.hasPermission("statusplugin.admin")) {
+                sender.sendMessage(ChatColor.RED + "ADMIN status can only be applied to admins or operators.");
+                return true;
+            }
 
             playerStatusMap.put(targetPlayer.getUniqueId(), status);
             String message = getLanguageText(targetPlayer, "status_set", "&aYour status has been set to: &r%s");
@@ -406,6 +415,8 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
 
         Player player = event.getPlayer();
         String status = playerStatusMap.getOrDefault(player.getUniqueId(), "");
+        String adminStatusFormat = statusOptions.get("ADMIN");
+        boolean usingAdminStatus = adminStatusFormat != null && adminStatusFormat.equals(status);
 
         // Get the configured chat format from the config
         String chatFormat;
@@ -433,13 +444,21 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         }
 
         chatFormat = chatFormat.replace("%deaths%", String.valueOf(getPlayerDeaths(player.getUniqueId())));
-        
-        chatFormat = chatFormat.replace("$$PLAYER$$", player.getName());
+
+        String playerName = player.getName();
+        if (usingAdminStatus) {
+            playerName = ChatColor.RED + playerName + ChatColor.RESET;
+        }
+        chatFormat = chatFormat.replace("$$PLAYER$$", playerName);
         chatFormat = ChatColor.translateAlternateColorCodes('&', chatFormat);
 
         // Create a TextComponent for the formatted message
         BaseComponent[] statusComponent = TextComponent.fromLegacyText(chatFormat);
-        BaseComponent[] messageComponent = TextComponent.fromLegacyText(event.getMessage());
+        String messageText = event.getMessage();
+        if (usingAdminStatus) {
+            messageText = ChatColor.RED + messageText + ChatColor.RESET;
+        }
+        BaseComponent[] messageComponent = TextComponent.fromLegacyText(messageText);
 
         // Concatenate components to form the final message
         BaseComponent[] finalComponents = new BaseComponent[statusComponent.length + messageComponent.length];
@@ -483,9 +502,17 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         if (command.getName().equalsIgnoreCase("status")) {
             if (args.length == 1) {
                 // Auto-complete status options
-                String prefix = args[0].toUpperCase();
+                String prefix = args[0].toUpperCase(Locale.ROOT);
+                boolean canUseAdminStatus = true;
+                if (sender instanceof Player) {
+                    Player playerSender = (Player) sender;
+                    canUseAdminStatus = playerSender.isOp() || playerSender.hasPermission("statusplugin.admin");
+                }
                 for (String option : statusOptions.keySet()) {
                     if (option.startsWith(prefix)) {
+                        if ("ADMIN".equals(option) && !canUseAdminStatus) {
+                            continue;
+                        }
                         completions.add(option);
                     }
                 }
@@ -691,14 +718,17 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     private void updatePlayerTabListName(Player player) {
         String status = playerStatusMap.getOrDefault(player.getUniqueId(), "");
         String playerName = player.getName();
+        String adminStatusFormat = statusOptions.get("ADMIN");
+        boolean usingAdminStatus = adminStatusFormat != null && adminStatusFormat.equals(status);
+        String coloredPlayerName = usingAdminStatus ? ChatColor.RED + playerName + ChatColor.RESET : playerName;
         String tabListName;
 
         if (status.isEmpty()) {
             // Use a format for no status that still includes country code
             String noStatusFormat = getConfig().getString("tab-list-format-no-status", "&7[&e%countrycode%&7] &r$$PLAYER$$");
-            tabListName = noStatusFormat.replace("$$PLAYER$$", playerName);
+            tabListName = noStatusFormat.replace("$$PLAYER$$", coloredPlayerName);
         } else {
-            tabListName = tabListFormat.replace("%status%", status).replace("$$PLAYER$$", playerName);
+            tabListName = tabListFormat.replace("%status%", status).replace("$$PLAYER$$", coloredPlayerName);
         }
         
         // Replace country placeholders for both cases (only if country location is enabled)
