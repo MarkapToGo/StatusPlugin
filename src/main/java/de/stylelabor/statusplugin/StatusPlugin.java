@@ -12,12 +12,14 @@ import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
+import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
@@ -29,11 +31,13 @@ import java.util.*;
 public final class StatusPlugin extends JavaPlugin implements Listener, TabCompleter {
 
     private final HashMap<UUID, String> playerStatusMap = new HashMap<>();
+    private final HashMap<UUID, Integer> playerDeathMap = new HashMap<>();
     private String commandName;
     private String tabListFormat;
     private final HashMap<String, String> statusOptions = new HashMap<>();
     private FileConfiguration languageConfig;
     private FileConfiguration playerStatusConfig;
+    private FileConfiguration playerDeathsConfig;
     private boolean isTabPluginPresent;
     private boolean useOnlyOneLanguage;
     private String defaultLanguage;
@@ -48,7 +52,9 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         loadConfig();
         loadLanguageConfig();
         loadPlayerStatusConfig(); // Load player status during plugin startup
+        loadPlayerDeathsConfig(); // Load player deaths during plugin startup
         loadPlayerStatuses(); // Load the statuses of all players from player-status.yml
+        loadPlayerDeaths(); // Load the death counts of all players from player-deaths.yml
         getServer().getPluginManager().registerEvents(this, this);
         Objects.requireNonNull(getCommand(commandName)).setTabCompleter(this);
         int pluginId = 20901;
@@ -87,8 +93,19 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
      * Load player statuses from playerStatusConfig and populate playerStatusMap.
      */
     private void loadPlayerStatuses() {
+        playerStatusMap.clear();
         for (String uuid : playerStatusConfig.getKeys(false)) {
             playerStatusMap.put(UUID.fromString(uuid), playerStatusConfig.getString(uuid));
+        }
+    }
+
+    private void loadPlayerDeaths() {
+        if (playerDeathsConfig == null) {
+            return;
+        }
+        playerDeathMap.clear();
+        for (String uuid : playerDeathsConfig.getKeys(false)) {
+            playerDeathMap.put(UUID.fromString(uuid), playerDeathsConfig.getInt(uuid, 0));
         }
     }
 
@@ -96,6 +113,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     public void onDisable() {
         // Plugin shutdown logic
         savePlayerStatusConfig(); // Save player status during plugin shutdown
+        savePlayerDeathsConfig(); // Save player deaths during plugin shutdown
         if (countryLocationManager != null) {
             countryLocationManager.saveAllPlayerCountries(); // Save country data during plugin shutdown
         }
@@ -156,29 +174,160 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
 
             return true;
         } else if (command.getName().equalsIgnoreCase("status-admin") && sender.hasPermission("statusplugin.admin")) {
-            if (args.length == 2) {
-                Player targetPlayer = Bukkit.getPlayer(args[0]);
-                if (targetPlayer != null) {
-                    String status = statusOptions.get(args[1].toUpperCase());
-                    if (status != null) {
-                        playerStatusMap.put(targetPlayer.getUniqueId(), status);
-                        String message = getLanguageText(targetPlayer, "status_set", "&aYour status has been set to: &r%s");
-                        targetPlayer.sendMessage(ChatColor.translateAlternateColorCodes('&', String.format(message, status)));
-                        updatePlayerTabList();
-
-                        // Save the player status to player-status.yml
-                        playerStatusConfig.set(targetPlayer.getUniqueId().toString(), status);
-                        savePlayerStatusConfig();
-                        sender.sendMessage(ChatColor.GREEN + "Status of " + targetPlayer.getName() + " has been set to: " + ChatColor.translateAlternateColorCodes('&', status));
-                    } else {
-                        sender.sendMessage(ChatColor.RED + "Invalid status option. Use /status-admin <playerName> <status>");
-                    }
-                } else {
-                    sender.sendMessage(ChatColor.RED + "Player not found.");
-                }
-            } else {
-                sender.sendMessage(ChatColor.RED + "Usage: /status-admin <playerName> <status>");
+            if (args.length == 0) {
+                sender.sendMessage(ChatColor.RED + "Usage: /status-admin <player> <status> | /status-admin deaths <player> [view|add|remove|minus|reset|set] [amount] | /status-admin reload");
+                return true;
             }
+
+            String subCommand = args[0].toLowerCase(Locale.ROOT);
+
+            if (subCommand.equals("reload")) {
+                reloadPlugin();
+                sender.sendMessage(ChatColor.GREEN + "StatusPlugin configuration reloaded!");
+                return true;
+            }
+
+            if (subCommand.equals("deaths")) {
+                if (args.length < 2) {
+                    sender.sendMessage(ChatColor.RED + "Usage: /status-admin deaths <player> [view|add|remove|minus|reset|set] [amount]");
+                    return true;
+                }
+
+                Player onlineTarget = Bukkit.getPlayerExact(args[1]);
+                OfflinePlayer targetProfile = onlineTarget != null ? onlineTarget : Bukkit.getOfflinePlayer(args[1]);
+                if (targetProfile == null || (!targetProfile.hasPlayedBefore() && !targetProfile.isOnline())) {
+                    sender.sendMessage(ChatColor.RED + "Player not found.");
+                    return true;
+                }
+
+                UUID targetUuid = targetProfile.getUniqueId();
+                int currentDeaths = getPlayerDeaths(targetUuid);
+
+                if (args.length == 2) {
+                    String targetName = targetProfile.getName() != null ? targetProfile.getName() : args[1];
+                    sender.sendMessage(ChatColor.YELLOW + targetName + ChatColor.GRAY + " has " + ChatColor.AQUA + currentDeaths + ChatColor.GRAY + " tracked deaths.");
+                    return true;
+                }
+
+                String action = args[2].toLowerCase(Locale.ROOT);
+                int newDeaths = currentDeaths;
+
+                switch (action) {
+                    case "reset":
+                        newDeaths = 0;
+                        break;
+                    case "set":
+                        if (args.length < 4) {
+                            sender.sendMessage(ChatColor.RED + "Usage: /status-admin deaths <player> set <amount>");
+                            return true;
+                        }
+                        try {
+                            int amount = Integer.parseInt(args[3]);
+                            if (amount < 0) {
+                                sender.sendMessage(ChatColor.RED + "Amount must not be negative.");
+                                return true;
+                            }
+                            newDeaths = amount;
+                        } catch (NumberFormatException e) {
+                            sender.sendMessage(ChatColor.RED + "Amount must be a whole number.");
+                            return true;
+                        }
+                        break;
+                    case "add":
+                        if (args.length < 4) {
+                            sender.sendMessage(ChatColor.RED + "Usage: /status-admin deaths <player> add <amount>");
+                            return true;
+                        }
+                        try {
+                            int amount = Integer.parseInt(args[3]);
+                            if (amount < 0) {
+                                sender.sendMessage(ChatColor.RED + "Amount must not be negative.");
+                                return true;
+                            }
+                            newDeaths = currentDeaths + amount;
+                        } catch (NumberFormatException e) {
+                            sender.sendMessage(ChatColor.RED + "Amount must be a whole number.");
+                            return true;
+                        }
+                        break;
+                    case "remove":
+                    case "minus":
+                        if (args.length < 4) {
+                            sender.sendMessage(ChatColor.RED + "Usage: /status-admin deaths <player> " + action + " <amount>");
+                            return true;
+                        }
+                        try {
+                            int amount = Integer.parseInt(args[3]);
+                            if (amount < 0) {
+                                sender.sendMessage(ChatColor.RED + "Amount must not be negative.");
+                                return true;
+                            }
+                            newDeaths = Math.max(0, currentDeaths - amount);
+                        } catch (NumberFormatException e) {
+                            sender.sendMessage(ChatColor.RED + "Amount must be a whole number.");
+                            return true;
+                        }
+                        break;
+                    default:
+                        sender.sendMessage(ChatColor.RED + "Usage: /status-admin deaths <player> [view|add|remove|minus|reset|set] [amount]");
+                        return true;
+                }
+
+                playerDeathMap.put(targetUuid, newDeaths);
+                if (playerDeathsConfig != null) {
+                    playerDeathsConfig.set(targetUuid.toString(), newDeaths);
+                    savePlayerDeathsConfig();
+                }
+
+                Player refreshedOnlineTarget = Bukkit.getPlayer(targetUuid);
+                if (refreshedOnlineTarget != null) {
+                    if (getConfig().getBoolean("tab-styling-enabled", true)) {
+                        updatePlayerTabListName(refreshedOnlineTarget);
+                    }
+                    refreshedOnlineTarget.sendMessage(ChatColor.GOLD + "Your tracked deaths were updated to " + ChatColor.AQUA + newDeaths + ChatColor.GOLD + " by an administrator.");
+                }
+
+                String targetName = targetProfile.getName() != null ? targetProfile.getName() : args[1];
+                sender.sendMessage(ChatColor.GREEN + "Set " + targetName + "'s tracked deaths to " + newDeaths + ".");
+                return true;
+            }
+
+            int targetIndex = 0;
+            int statusIndex = 1;
+
+            if (subCommand.equals("set")) {
+                if (args.length < 3) {
+                    sender.sendMessage(ChatColor.RED + "Usage: /status-admin set <player> <status>");
+                    return true;
+                }
+                targetIndex = 1;
+                statusIndex = 2;
+            } else if (args.length < 2) {
+                sender.sendMessage(ChatColor.RED + "Usage: /status-admin <player> <status>");
+                return true;
+            }
+
+            Player targetPlayer = Bukkit.getPlayer(args[targetIndex]);
+            if (targetPlayer == null) {
+                sender.sendMessage(ChatColor.RED + "Player not found.");
+                return true;
+            }
+
+            String statusKey = args[statusIndex].toUpperCase(Locale.ROOT);
+            String status = statusOptions.get(statusKey);
+            if (status == null) {
+                sender.sendMessage(ChatColor.RED + "Invalid status option. Use /status-admin " + (subCommand.equals("set") ? "set <player> <status>" : "<player> <status>"));
+                return true;
+            }
+
+            playerStatusMap.put(targetPlayer.getUniqueId(), status);
+            String message = getLanguageText(targetPlayer, "status_set", "&aYour status has been set to: &r%s");
+            targetPlayer.sendMessage(ChatColor.translateAlternateColorCodes('&', String.format(message, status)));
+            updatePlayerTabList();
+
+            playerStatusConfig.set(targetPlayer.getUniqueId().toString(), status);
+            savePlayerStatusConfig();
+            sender.sendMessage(ChatColor.GREEN + "Status of " + targetPlayer.getName() + " has been set to: " + ChatColor.translateAlternateColorCodes('&', status));
             return true;
         }
 
@@ -232,6 +381,21 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     }
 
     @EventHandler
+    public void onPlayerDeath(PlayerDeathEvent event) {
+        Player player = event.getEntity();
+        UUID uuid = player.getUniqueId();
+        int deaths = playerDeathMap.getOrDefault(uuid, 0) + 1;
+        playerDeathMap.put(uuid, deaths);
+        if (playerDeathsConfig != null) {
+            playerDeathsConfig.set(uuid.toString(), deaths);
+            savePlayerDeathsConfig();
+        }
+        if (getConfig().getBoolean("tab-styling-enabled", true)) {
+            updatePlayerTabListName(player);
+        }
+    }
+
+    @EventHandler
     public void onPlayerChat(AsyncPlayerChatEvent event) {
         if (Boolean.TRUE.equals(relayingToDiscord.get())) {
             return; // Skip formatting/broadcast when relaying to avoid duplicates
@@ -267,6 +431,8 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             chatFormat = chatFormat.replace("%country%", "");
             chatFormat = chatFormat.replace("%countrycode%", "");
         }
+
+        chatFormat = chatFormat.replace("%deaths%", String.valueOf(getPlayerDeaths(player.getUniqueId())));
         
         chatFormat = chatFormat.replace("$$PLAYER$$", player.getName());
         chatFormat = ChatColor.translateAlternateColorCodes('&', chatFormat);
@@ -326,19 +492,52 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             }
         } else if (command.getName().equalsIgnoreCase("status-admin")) {
             if (args.length == 1) {
-                // Auto-complete player names
-                String prefix = args[0].toLowerCase();
+                String prefix = args[0].toLowerCase(Locale.ROOT);
+                if ("reload".startsWith(prefix)) {
+                    completions.add("reload");
+                }
+                if ("deaths".startsWith(prefix)) {
+                    completions.add("deaths");
+                }
+                if ("set".startsWith(prefix)) {
+                    completions.add("set");
+                }
                 for (Player player : Bukkit.getOnlinePlayers()) {
-                    if (player.getName().toLowerCase().startsWith(prefix)) {
+                    if (player.getName().toLowerCase(Locale.ROOT).startsWith(prefix)) {
                         completions.add(player.getName());
                     }
                 }
             } else if (args.length == 2) {
-                // Auto-complete status options
-                String prefix = args[1].toUpperCase();
-                for (String option : statusOptions.keySet()) {
-                    if (option.startsWith(prefix)) {
-                        completions.add(option);
+                if (args[0].equalsIgnoreCase("deaths") || args[0].equalsIgnoreCase("set")) {
+                    String prefix = args[1].toLowerCase(Locale.ROOT);
+                    for (Player player : Bukkit.getOnlinePlayers()) {
+                        if (player.getName().toLowerCase(Locale.ROOT).startsWith(prefix)) {
+                            completions.add(player.getName());
+                        }
+                    }
+                } else {
+                    String prefix = args[1].toUpperCase(Locale.ROOT);
+                    for (String option : statusOptions.keySet()) {
+                        if (option.startsWith(prefix)) {
+                            completions.add(option);
+                        }
+                    }
+                }
+            } else if (args.length == 3) {
+                if (args[0].equalsIgnoreCase("deaths")) {
+                    String prefix = args[2].toLowerCase(Locale.ROOT);
+                    List<String> actions = Arrays.asList("add", "remove", "minus", "reset", "set");
+                    for (String action : actions) {
+                        if (action.startsWith(prefix)) {
+                            completions.add(action);
+                        }
+                    }
+                } else if (args[0].equalsIgnoreCase("set")) {
+                    String prefix = args[2].toUpperCase(Locale.ROOT);
+                    for (String option : statusOptions.keySet()) {
+                        if (option.startsWith(prefix)) {
+                            completions.add(option);
+                        }
                     }
                 }
             }
@@ -350,8 +549,8 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     private void loadConfig() {
         FileConfiguration config = getConfig();
         commandName = config.getString("command-name", "status");
-        config.getString("chat-format", "&7[&a%status%&7] &r%s");
-        tabListFormat = config.getString("tab-list-format", "&7[&a%status%&7] &r%s");
+        config.getString("chat-format", "%status% &r<$$PLAYER$$> &e%countrycode% &c%deaths%");
+        tabListFormat = config.getString("tab-list-format", "&a%status% &r$$PLAYER$$ &e%countrycode% &c%deaths%");
         defaultLanguage = config.getString("default-language", "english");
         useOnlyOneLanguage = config.getBoolean("use-only-one-language", true);
 
@@ -414,12 +613,36 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         playerStatusConfig = YamlConfiguration.loadConfiguration(playerStatusFile);
     }
 
+    private void loadPlayerDeathsConfig() {
+        File playerDeathsFile = new File(getDataFolder(), "player-deaths.yml");
+        if (!playerDeathsFile.exists()) {
+            try {
+                if (playerDeathsFile.createNewFile()) {
+                    getLogger().info("player-deaths.yml file created.");
+                }
+            } catch (IOException e) {
+                getLogger().info("&c AN ERROR OCCURRED! | loadPlayerDeathsConfig | IOException e");
+            }
+        }
+
+        playerDeathsConfig = YamlConfiguration.loadConfiguration(playerDeathsFile);
+    }
+
     private void savePlayerStatusConfig() {
         File playerStatusFile = new File(getDataFolder(), "player-status.yml");
         try {
             playerStatusConfig.save(playerStatusFile);
         } catch (IOException e) {
             getLogger().info("&c AN ERROR OCCURRED! | savePlayerStatusConfig | IOException e");
+        }
+    }
+
+    private void savePlayerDeathsConfig() {
+        File playerDeathsFile = new File(getDataFolder(), "player-deaths.yml");
+        try {
+            playerDeathsConfig.save(playerDeathsFile);
+        } catch (IOException e) {
+            getLogger().info("&c AN ERROR OCCURRED! | savePlayerDeathsConfig | IOException e");
         }
     }
 
@@ -459,6 +682,10 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         return countryLocationManager;
     }
 
+    public int getPlayerDeaths(UUID uuid) {
+        return playerDeathMap.getOrDefault(uuid, 0);
+    }
+
 
 
     private void updatePlayerTabListName(Player player) {
@@ -489,6 +716,8 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             tabListName = tabListName.replace("%country%", "");
             tabListName = tabListName.replace("%countrycode%", "");
         }
+
+        tabListName = tabListName.replace("%deaths%", String.valueOf(getPlayerDeaths(player.getUniqueId())));
         
         tabListName = ChatColor.translateAlternateColorCodes('&', tabListName);
 
@@ -515,5 +744,9 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         loadConfig();
         loadLanguageConfig();
         loadPlayerStatusConfig();
+        loadPlayerDeathsConfig();
+        loadPlayerStatuses();
+        loadPlayerDeaths();
+        updatePlayerTabList();
     }
 }

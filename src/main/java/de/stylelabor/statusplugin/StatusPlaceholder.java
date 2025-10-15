@@ -67,6 +67,8 @@ public class StatusPlaceholder extends PlaceholderExpansion {
             }
             CountryLocationManager.CountryData countryData = countryManager.getPlayerCountry(player.getUniqueId());
             return countryData != null ? countryData.getCountryCode() : "";
+        } else if (identifier.equals("deaths")) {
+            return String.valueOf(plugin.getPlayerDeaths(player.getUniqueId()));
         }
 
         return null;
