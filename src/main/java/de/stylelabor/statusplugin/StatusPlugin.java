@@ -23,6 +23,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -59,6 +60,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     private boolean isDiscordSrvPresent;
     private CountryLocationManager countryLocationManager;
     private long totalBlocksPlaced;
+    private long totalBlocksBroken;
     private long totalTrackedDeaths;
     private boolean serverStatsDirty;
     private int statsAutosaveCounterTicks;
@@ -470,6 +472,18 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     }
 
     @EventHandler
+    public void onBlockBreak(BlockBreakEvent event) {
+        if (event.isCancelled()) {
+            return;
+        }
+        totalBlocksBroken++;
+        if (serverStatsConfig != null) {
+            serverStatsConfig.set("total-blocks-broken", totalBlocksBroken);
+            serverStatsDirty = true;
+        }
+    }
+
+    @EventHandler
     public void onPlayerChat(AsyncPlayerChatEvent event) {
         if (Boolean.TRUE.equals(relayingToDiscord.get())) {
             return; // Skip formatting/broadcast when relaying to avoid duplicates
@@ -781,6 +795,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
 
         serverStatsConfig = YamlConfiguration.loadConfiguration(serverStatsFile);
         totalBlocksPlaced = serverStatsConfig.getLong("total-blocks-placed", 0L);
+        totalBlocksBroken = serverStatsConfig.getLong("total-blocks-broken", 0L);
         long storedTotalDeaths = serverStatsConfig.getLong("total-deaths", -1L);
         if (storedTotalDeaths >= 0) {
             totalTrackedDeaths = storedTotalDeaths;
@@ -813,6 +828,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         }
         File serverStatsFile = new File(getDataFolder(), "server-stats.yml");
         serverStatsConfig.set("total-blocks-placed", totalBlocksPlaced);
+        serverStatsConfig.set("total-blocks-broken", totalBlocksBroken);
         serverStatsConfig.set("total-deaths", totalTrackedDeaths);
         try {
             serverStatsConfig.save(serverStatsFile);
@@ -985,6 +1001,14 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         return formatLargeNumber(totalBlocksPlaced);
     }
 
+    public long getTotalBlocksBroken() {
+        return totalBlocksBroken;
+    }
+
+    public String getFormattedTotalBlocksBroken() {
+        return formatLargeNumber(totalBlocksBroken);
+    }
+
     public long getTotalTrackedDeaths() {
         return totalTrackedDeaths;
     }
@@ -1122,6 +1146,8 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
                 .replace("%performance_label%", snapshot.performanceLabel)
                 .replace("%total_blocks%", snapshot.totalBlocksShort)
                 .replace("%total_blocks_raw%", String.valueOf(snapshot.totalBlocksRaw))
+                .replace("%total_blocks_broken%", snapshot.totalBlocksBrokenShort)
+                .replace("%total_blocks_broken_raw%", String.valueOf(snapshot.totalBlocksBrokenRaw))
                 .replace("%total_deaths%", snapshot.totalDeathsShort)
                 .replace("%total_deaths_raw%", String.valueOf(snapshot.totalDeathsRaw));
 
@@ -1216,6 +1242,8 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         private final String performanceLabel;
         private final long totalBlocksRaw;
         private final String totalBlocksShort;
+        private final long totalBlocksBrokenRaw;
+        private final String totalBlocksBrokenShort;
         private final long totalDeathsRaw;
         private final String totalDeathsShort;
 
@@ -1233,6 +1261,8 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
                                        String performanceLabel,
                                        long totalBlocksRaw,
                                        String totalBlocksShort,
+                                       long totalBlocksBrokenRaw,
+                                       String totalBlocksBrokenShort,
                                        long totalDeathsRaw,
                                        String totalDeathsShort) {
             this.tabStylingEnabled = tabStylingEnabled;
@@ -1249,6 +1279,8 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             this.performanceLabel = performanceLabel;
             this.totalBlocksRaw = totalBlocksRaw;
             this.totalBlocksShort = totalBlocksShort;
+            this.totalBlocksBrokenRaw = totalBlocksBrokenRaw;
+            this.totalBlocksBrokenShort = totalBlocksBrokenShort;
             this.totalDeathsRaw = totalDeathsRaw;
             this.totalDeathsShort = totalDeathsShort;
         }
@@ -1277,6 +1309,8 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
                     plugin.cachedPerformanceLabel,
                     plugin.totalBlocksPlaced,
                     plugin.formatLargeNumber(plugin.totalBlocksPlaced),
+                    plugin.totalBlocksBroken,
+                    plugin.formatLargeNumber(plugin.totalBlocksBroken),
                     plugin.totalTrackedDeaths,
                     plugin.formatLargeNumber(plugin.totalTrackedDeaths)
             );
