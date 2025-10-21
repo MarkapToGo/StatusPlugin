@@ -15,15 +15,19 @@ import org.bukkit.World;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.scheduler.BukkitRunnable;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
@@ -48,14 +52,32 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     private FileConfiguration languageConfig;
     private FileConfiguration playerStatusConfig;
     private FileConfiguration playerDeathsConfig;
+    private FileConfiguration serverStatsConfig;
     private boolean isTabPluginPresent;
     private boolean useOnlyOneLanguage;
     private String defaultLanguage;
     private boolean isDiscordSrvPresent;
     private CountryLocationManager countryLocationManager;
+    private long totalBlocksPlaced;
+    private long totalTrackedDeaths;
+    private boolean serverStatsDirty;
+    private int statsAutosaveCounterTicks;
+    private BukkitTask fastTabRefreshTask;
+    private BukkitTask slowTabRefreshTask;
+    private int tabRefreshIntervalTicks;
+    private int tabDimensionRefreshIntervalTicks;
+    private int rotatingLineIntervalTicks;
+    private int rotatingLineElapsedTicks;
+    private int rotatingLineIndex;
+    private List<String> tabListRotatingLines = Collections.emptyList();
+    private int cachedOverworldPlayers;
+    private int cachedNetherPlayers;
+    private int cachedEndPlayers;
+    private String cachedPerformanceLabel = ChatColor.GREEN + "" + ChatColor.UNDERLINE + "Smooth" + ChatColor.RESET;
     private static final ThreadLocal<Boolean> relayingToDiscord = ThreadLocal.withInitial(() -> false);
     private static final DateTimeFormatter TABLIST_TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault());
     private static final String PLACEHOLDER_NOT_AVAILABLE = "N/A";
+    private static final int STATS_AUTOSAVE_INTERVAL_TICKS = 6000;
 
     @Override
     public void onEnable() {
@@ -65,6 +87,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         loadLanguageConfig();
         loadPlayerStatusConfig(); // Load player status during plugin startup
         loadPlayerDeathsConfig(); // Load player deaths during plugin startup
+        loadServerStatsConfig(); // Load persistent server-wide stats
         loadPlayerStatuses(); // Load the statuses of all players from player-status.yml
         loadPlayerDeaths(); // Load the death counts of all players from player-deaths.yml
         getServer().getPluginManager().registerEvents(this, this);
@@ -99,6 +122,9 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             getLogger().info("Country location feature disabled. To enable, set country-location-enabled to true in config.yml");
         }
 
+        refreshDimensionCache();
+        startTabRefreshSchedulers();
+
     }
 
     /**
@@ -116,16 +142,26 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             return;
         }
         playerDeathMap.clear();
+        long aggregatedDeaths = 0;
         for (String uuid : playerDeathsConfig.getKeys(false)) {
-            playerDeathMap.put(UUID.fromString(uuid), playerDeathsConfig.getInt(uuid, 0));
+            int deaths = playerDeathsConfig.getInt(uuid, 0);
+            aggregatedDeaths += deaths;
+            playerDeathMap.put(UUID.fromString(uuid), deaths);
+        }
+        totalTrackedDeaths = aggregatedDeaths;
+        if (serverStatsConfig != null) {
+            serverStatsConfig.set("total-deaths", totalTrackedDeaths);
+            serverStatsDirty = true;
         }
     }
 
     @Override
     public void onDisable() {
         // Plugin shutdown logic
+        stopTabRefreshSchedulers();
         savePlayerStatusConfig(); // Save player status during plugin shutdown
         savePlayerDeathsConfig(); // Save player deaths during plugin shutdown
+        persistServerStats(true);
         if (countryLocationManager != null) {
             countryLocationManager.saveAllPlayerCountries(); // Save country data during plugin shutdown
         }
@@ -375,7 +411,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
                 if (countryData != null) {
                     // Update tab list after country data is loaded
                     if (getConfig().getBoolean("tab-styling-enabled", true)) {
-                        Bukkit.getScheduler().runTask(this, this::updatePlayerTabList);
+                        Bukkit.getScheduler().runTask(this, () -> updatePlayerTabList());
                     }
                 }
             }).exceptionally(throwable -> {
@@ -411,8 +447,25 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             playerDeathsConfig.set(uuid.toString(), deaths);
             savePlayerDeathsConfig();
         }
+        totalTrackedDeaths++;
+        if (serverStatsConfig != null) {
+            serverStatsConfig.set("total-deaths", totalTrackedDeaths);
+            serverStatsDirty = true;
+        }
         if (getConfig().getBoolean("tab-styling-enabled", true)) {
             updatePlayerTabListName(player, TabEnvironmentSnapshot.capture(this));
+        }
+    }
+
+    @EventHandler
+    public void onBlockPlace(BlockPlaceEvent event) {
+        if (event.isCancelled()) {
+            return;
+        }
+        totalBlocksPlaced++;
+        if (serverStatsConfig != null) {
+            serverStatsConfig.set("total-blocks-placed", totalBlocksPlaced);
+            serverStatsDirty = true;
         }
     }
 
@@ -593,6 +646,8 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         defaultLanguage = config.getString("default-language", "english");
         useOnlyOneLanguage = config.getBoolean("use-only-one-language", true);
         customTabListEnabled = config.getBoolean("custom-tablist-enabled", false);
+        tabRefreshIntervalTicks = Math.max(1, config.getInt("tab-refresh-interval-ticks", 20));
+        tabDimensionRefreshIntervalTicks = Math.max(tabRefreshIntervalTicks, config.getInt("tab-dimension-refresh-interval-ticks", 200));
 
         // Load status options from status-options.yml
         loadStatusOptions();
@@ -641,6 +696,26 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             footerLines = Collections.singletonList(footerLine == null ? "" : footerLine);
         }
         tabListFooterLines = footerLines.isEmpty() ? Collections.emptyList() : new ArrayList<>(footerLines);
+
+        List<String> rotatingLines = Collections.emptyList();
+        rotatingLineIntervalTicks = Math.max(tabRefreshIntervalTicks, 100);
+        if (tabListConfig.isList("rotating-line")) {
+            rotatingLines = tabListConfig.getStringList("rotating-line");
+        } else {
+            ConfigurationSection rotatingSection = tabListConfig.getConfigurationSection("rotating-line");
+            if (rotatingSection != null) {
+                rotatingLines = rotatingSection.getStringList("entries");
+                rotatingLineIntervalTicks = Math.max(tabRefreshIntervalTicks, rotatingSection.getInt("interval-ticks", rotatingLineIntervalTicks));
+            }
+        }
+
+        if (rotatingLines.isEmpty()) {
+            tabListRotatingLines = Collections.emptyList();
+        } else {
+            tabListRotatingLines = new ArrayList<>(rotatingLines);
+        }
+        rotatingLineIndex = 0;
+        rotatingLineElapsedTicks = 0;
     }
 
     private void loadLanguageConfig() {
@@ -692,6 +767,28 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         playerDeathsConfig = YamlConfiguration.loadConfiguration(playerDeathsFile);
     }
 
+    private void loadServerStatsConfig() {
+        File serverStatsFile = new File(getDataFolder(), "server-stats.yml");
+        if (!serverStatsFile.exists()) {
+            try {
+                if (serverStatsFile.createNewFile()) {
+                    getLogger().info("server-stats.yml file created.");
+                }
+            } catch (IOException e) {
+                getLogger().info("&c AN ERROR OCCURRED! | loadServerStatsConfig | IOException e");
+            }
+        }
+
+        serverStatsConfig = YamlConfiguration.loadConfiguration(serverStatsFile);
+        totalBlocksPlaced = serverStatsConfig.getLong("total-blocks-placed", 0L);
+        long storedTotalDeaths = serverStatsConfig.getLong("total-deaths", -1L);
+        if (storedTotalDeaths >= 0) {
+            totalTrackedDeaths = storedTotalDeaths;
+        }
+        serverStatsDirty = false;
+        statsAutosaveCounterTicks = 0;
+    }
+
     private void savePlayerStatusConfig() {
         File playerStatusFile = new File(getDataFolder(), "player-status.yml");
         try {
@@ -710,6 +807,41 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         }
     }
 
+    private void saveServerStatsConfig() {
+        if (serverStatsConfig == null) {
+            return;
+        }
+        File serverStatsFile = new File(getDataFolder(), "server-stats.yml");
+        serverStatsConfig.set("total-blocks-placed", totalBlocksPlaced);
+        serverStatsConfig.set("total-deaths", totalTrackedDeaths);
+        try {
+            serverStatsConfig.save(serverStatsFile);
+        } catch (IOException e) {
+            getLogger().info("&c AN ERROR OCCURRED! | saveServerStatsConfig | IOException e");
+        }
+    }
+
+    private void persistServerStats(boolean force) {
+        if (serverStatsConfig == null) {
+            return;
+        }
+
+        if (!serverStatsDirty && !force) {
+            return;
+        }
+
+        if (!force) {
+            statsAutosaveCounterTicks += tabRefreshIntervalTicks;
+            if (statsAutosaveCounterTicks < STATS_AUTOSAVE_INTERVAL_TICKS) {
+                return;
+            }
+        }
+
+        statsAutosaveCounterTicks = 0;
+        serverStatsDirty = false;
+        saveServerStatsConfig();
+    }
+
     private String getLanguageText(Player player, String key, String defaultText) {
         if (useOnlyOneLanguage) {
             return languageConfig.getString(key, defaultText);
@@ -722,7 +854,13 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     }
 
     private void updatePlayerTabList() {
-        TabEnvironmentSnapshot snapshot = TabEnvironmentSnapshot.capture(this);
+        updatePlayerTabList(TabEnvironmentSnapshot.capture(this));
+    }
+
+    private void updatePlayerTabList(TabEnvironmentSnapshot snapshot) {
+        if (snapshot == null) {
+            return;
+        }
 
         // Get a list of all online players
         List<Player> players = new ArrayList<>(Bukkit.getOnlinePlayers());
@@ -740,6 +878,86 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         }
     }
 
+    private void startTabRefreshSchedulers() {
+        stopTabRefreshSchedulers();
+
+        if (!getConfig().getBoolean("tab-styling-enabled", true)) {
+            return;
+        }
+
+        statsAutosaveCounterTicks = 0;
+        refreshDimensionCache();
+        runFastTabRefreshTick();
+
+        slowTabRefreshTask = new BukkitRunnable() {
+            @Override
+            public void run() {
+                refreshDimensionCache();
+            }
+        }.runTaskTimer(this, tabDimensionRefreshIntervalTicks, tabDimensionRefreshIntervalTicks);
+        fastTabRefreshTask = new BukkitRunnable() {
+            @Override
+            public void run() {
+                runFastTabRefreshTick();
+            }
+        }.runTaskTimer(this, tabRefreshIntervalTicks, tabRefreshIntervalTicks);
+    }
+
+    private void stopTabRefreshSchedulers() {
+        if (fastTabRefreshTask != null) {
+            fastTabRefreshTask.cancel();
+            fastTabRefreshTask = null;
+        }
+        if (slowTabRefreshTask != null) {
+            slowTabRefreshTask.cancel();
+            slowTabRefreshTask = null;
+        }
+    }
+
+    private void refreshDimensionCache() {
+        cachedOverworldPlayers = countPlayersInEnvironment(World.Environment.NORMAL);
+        cachedNetherPlayers = countPlayersInEnvironment(World.Environment.NETHER);
+        cachedEndPlayers = countPlayersInEnvironment(World.Environment.THE_END);
+    }
+
+    private void runFastTabRefreshTick() {
+        if (!getConfig().getBoolean("tab-styling-enabled", true)) {
+            return;
+        }
+
+        double[] tpsValues = fetchRecentTps();
+        cachedPerformanceLabel = computePerformanceLabel(tpsValues);
+
+        if (!tabListRotatingLines.isEmpty()) {
+            rotatingLineElapsedTicks += tabRefreshIntervalTicks;
+            if (rotatingLineElapsedTicks >= Math.max(rotatingLineIntervalTicks, tabRefreshIntervalTicks)) {
+                rotatingLineElapsedTicks = 0;
+                rotatingLineIndex = (rotatingLineIndex + 1) % tabListRotatingLines.size();
+            }
+        }
+
+        TabEnvironmentSnapshot snapshot = TabEnvironmentSnapshot.capture(this, tpsValues);
+        updatePlayerTabList(snapshot);
+        persistServerStats(false);
+    }
+
+    private String computePerformanceLabel(double[] tpsValues) {
+        double tps = tpsValues != null && tpsValues.length > 0 ? tpsValues[0] : -1;
+        if (tps <= 0) {
+            return ChatColor.DARK_RED + "" + ChatColor.UNDERLINE + "UNKNOWN" + ChatColor.RESET;
+        }
+        if (tps >= 19.5D) {
+            return ChatColor.GREEN + "" + ChatColor.UNDERLINE + "SMOOTH" + ChatColor.RESET;
+        }
+        if (tps >= 18.0D) {
+            return ChatColor.YELLOW + "" + ChatColor.UNDERLINE + "STABLE" + ChatColor.RESET;
+        }
+        if (tps >= 15.0D) {
+            return ChatColor.GOLD + "" + ChatColor.UNDERLINE + "STRUGGLING" + ChatColor.RESET;
+        }
+        return ChatColor.RED + "" + ChatColor.UNDERLINE + "CRITICAL" + ChatColor.RESET;
+    }
+
     public String getPlayerStatus(UUID uuid) {
         return playerStatusMap.getOrDefault(uuid, "");
     }
@@ -750,6 +968,29 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
 
     public int getPlayerDeaths(UUID uuid) {
         return playerDeathMap.getOrDefault(uuid, 0);
+    }
+
+    public String getPerformanceLabel() {
+        if (fastTabRefreshTask == null) {
+            cachedPerformanceLabel = computePerformanceLabel(fetchRecentTps());
+        }
+        return cachedPerformanceLabel;
+    }
+
+    public long getTotalBlocksPlaced() {
+        return totalBlocksPlaced;
+    }
+
+    public String getFormattedTotalBlocksPlaced() {
+        return formatLargeNumber(totalBlocksPlaced);
+    }
+
+    public long getTotalTrackedDeaths() {
+        return totalTrackedDeaths;
+    }
+
+    public String getFormattedTotalTrackedDeaths() {
+        return formatLargeNumber(totalTrackedDeaths);
     }
 
 
@@ -848,6 +1089,16 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     }
 
     private String formatTabListText(String template, Player player, String status, String coloredPlayerName, CountryLocationManager.CountryData countryData, TabEnvironmentSnapshot snapshot) {
+        return applyTabListPlaceholders(template, player, status, coloredPlayerName, countryData, snapshot, true);
+    }
+
+    private String applyTabListPlaceholders(String template,
+                                            Player player,
+                                            String status,
+                                            String coloredPlayerName,
+                                            CountryLocationManager.CountryData countryData,
+                                            TabEnvironmentSnapshot snapshot,
+                                            boolean includeRotatingToken) {
         if (template == null) {
             return "";
         }
@@ -866,9 +1117,28 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
                 .replace("%tps%", snapshot.tps1m)
                 .replace("%tps_1m%", snapshot.tps1m)
                 .replace("%tps_5m%", snapshot.tps5m)
-                .replace("%tps_15m%", snapshot.tps15m);
+                .replace("%tps_15m%", snapshot.tps15m)
+                .replace("%performance%", snapshot.performanceLabel)
+                .replace("%performance_label%", snapshot.performanceLabel)
+                .replace("%total_blocks%", snapshot.totalBlocksShort)
+                .replace("%total_blocks_raw%", String.valueOf(snapshot.totalBlocksRaw))
+                .replace("%total_deaths%", snapshot.totalDeathsShort)
+                .replace("%total_deaths_raw%", String.valueOf(snapshot.totalDeathsRaw));
 
-        return replaceCountryPlaceholders(result, countryData);
+        result = replaceCountryPlaceholders(result, countryData);
+
+        if (includeRotatingToken && result.contains("%rotating_line%")) {
+            String rotatingLine = "";
+            if (!tabListRotatingLines.isEmpty()) {
+                String rotatingTemplate = tabListRotatingLines.get(rotatingLineIndex % tabListRotatingLines.size());
+                rotatingLine = applyTabListPlaceholders(rotatingTemplate, player, status, coloredPlayerName, countryData, snapshot, false);
+            }
+            result = result.replace("%rotating_line%", rotatingLine);
+        } else if (!includeRotatingToken) {
+            result = result.replace("%rotating_line%", "");
+        }
+
+        return result;
     }
 
     private int countPlayersInEnvironment(World.Environment environment) {
@@ -906,6 +1176,31 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         return PLACEHOLDER_NOT_AVAILABLE;
     }
 
+    private String formatLargeNumber(long value) {
+        long absValue = Math.abs(value);
+        if (absValue >= 1_000_000_000L) {
+            return formatWithSuffix(value, 1_000_000_000L, "b");
+        }
+        if (absValue >= 1_000_000L) {
+            return formatWithSuffix(value, 1_000_000L, "m");
+        }
+        if (absValue >= 1_000L) {
+            return formatWithSuffix(value, 1_000L, "k");
+        }
+        return String.valueOf(value);
+    }
+
+    private String formatWithSuffix(long value, long divisor, String suffix) {
+        double scaled = (double) value / divisor;
+        String formatted = Math.abs(scaled) >= 100
+                ? String.format(Locale.US, "%.0f", scaled)
+                : String.format(Locale.US, "%.1f", scaled);
+        if (formatted.endsWith(".0")) {
+            formatted = formatted.substring(0, formatted.length() - 2);
+        }
+        return formatted + suffix;
+    }
+
     private static final class TabEnvironmentSnapshot {
         private final boolean tabStylingEnabled;
         private final boolean countryPlaceholdersEnabled;
@@ -918,6 +1213,11 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         private final String tps1m;
         private final String tps5m;
         private final String tps15m;
+        private final String performanceLabel;
+        private final long totalBlocksRaw;
+        private final String totalBlocksShort;
+        private final long totalDeathsRaw;
+        private final String totalDeathsShort;
 
         private TabEnvironmentSnapshot(boolean tabStylingEnabled,
                                        boolean countryPlaceholdersEnabled,
@@ -929,7 +1229,12 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
                                        int maxPlayers,
                                        String tps1m,
                                        String tps5m,
-                                       String tps15m) {
+                                       String tps15m,
+                                       String performanceLabel,
+                                       long totalBlocksRaw,
+                                       String totalBlocksShort,
+                                       long totalDeathsRaw,
+                                       String totalDeathsShort) {
             this.tabStylingEnabled = tabStylingEnabled;
             this.countryPlaceholdersEnabled = countryPlaceholdersEnabled;
             this.serverTime = serverTime;
@@ -941,25 +1246,39 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             this.tps1m = tps1m;
             this.tps5m = tps5m;
             this.tps15m = tps15m;
+            this.performanceLabel = performanceLabel;
+            this.totalBlocksRaw = totalBlocksRaw;
+            this.totalBlocksShort = totalBlocksShort;
+            this.totalDeathsRaw = totalDeathsRaw;
+            this.totalDeathsShort = totalDeathsShort;
         }
 
         private static TabEnvironmentSnapshot capture(StatusPlugin plugin) {
+            return capture(plugin, null);
+        }
+
+        private static TabEnvironmentSnapshot capture(StatusPlugin plugin, double[] tpsValues) {
             boolean tabStylingEnabled = plugin.getConfig().getBoolean("tab-styling-enabled", true);
             boolean countryEnabled = plugin.getConfig().getBoolean("country-location-enabled", false)
                     && plugin.countryLocationManager != null;
-            double[] tpsValues = plugin.fetchRecentTps();
+            double[] resolvedTps = tpsValues != null ? tpsValues : plugin.fetchRecentTps();
             return new TabEnvironmentSnapshot(
                     tabStylingEnabled,
                     countryEnabled,
                     plugin.getCurrentServerTime(),
-                    plugin.countPlayersInEnvironment(World.Environment.NORMAL),
-                    plugin.countPlayersInEnvironment(World.Environment.NETHER),
-                    plugin.countPlayersInEnvironment(World.Environment.THE_END),
+                    plugin.cachedOverworldPlayers,
+                    plugin.cachedNetherPlayers,
+                    plugin.cachedEndPlayers,
                     Bukkit.getOnlinePlayers().size(),
                     Bukkit.getMaxPlayers(),
-                    formatTpsValue(tpsValues, 0),
-                    formatTpsValue(tpsValues, 1),
-                    formatTpsValue(tpsValues, 2)
+                    formatTpsValue(resolvedTps, 0),
+                    formatTpsValue(resolvedTps, 1),
+                    formatTpsValue(resolvedTps, 2),
+                    plugin.cachedPerformanceLabel,
+                    plugin.totalBlocksPlaced,
+                    plugin.formatLargeNumber(plugin.totalBlocksPlaced),
+                    plugin.totalTrackedDeaths,
+                    plugin.formatLargeNumber(plugin.totalTrackedDeaths)
             );
         }
     }
@@ -980,13 +1299,18 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         return text;
     }
     private void reloadPlugin() {
+        persistServerStats(true);
+        stopTabRefreshSchedulers();
         reloadConfig();
         loadConfig();
         loadLanguageConfig();
         loadPlayerStatusConfig();
         loadPlayerDeathsConfig();
+        loadServerStatsConfig();
         loadPlayerStatuses();
         loadPlayerDeaths();
+        refreshDimensionCache();
+        startTabRefreshSchedulers();
         updatePlayerTabList();
     }
 }

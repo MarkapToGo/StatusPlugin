@@ -7,7 +7,7 @@
 # Version                                          
 # Used for comparing against latest plugin version 
 # -------------------------------------------------
-current_version: "5.4"
+current_version: "5.5"
 
 # -------------------------------------------------
 # Command                                           
@@ -36,6 +36,9 @@ chat-format-no-status: "&r<$$PLAYER$$> &e%countrycode%"
 tab-list-format: "&a%status% &r$$PLAYER$$ &e%countrycode% &8[&c☠ %deaths%&8]"
 tab-list-format-no-status: "&r$$PLAYER$$ &e%countrycode% &8[&c☠ %deaths%&8]"
 custom-tablist-enabled: false # Edit tablist.yml to configure header/footer when enabled
+tab-refresh-interval-ticks: 20 # How often dynamic tab placeholders refresh (20 ticks = 1 second)
+tab-dimension-refresh-interval-ticks: 200 # How often dimension player counts refresh (200 ticks = 10 seconds)
+# Extra tab placeholders: %total_blocks%, %total_deaths%, %performance%, %rotating_line%, %online_players%, %max_players%, %overworld_players%, %nether_players%, %end_players%, %server_time%, %tps%, %tps_5m%, %tps_15m%
 
 # -------------------------------------------------
 # Permissions                                       
@@ -109,5 +112,14 @@ language:
 #
 # %statusplugin_countrycode% - Player's country code (requires country-location-enabled: true)
 #                            Example: "CA", "US", "DE"
+#
+# %statusplugin_performance% - Current server performance label (color-coded & underlined)
+#                            Example: "&a&nSMOOTH&r"
+#
+# %statusplugin_total_blocks% - Total blocks placed (short style: 12.4k, 3.1m, etc.)
+# %statusplugin_total_blocks_raw% - Total blocks placed (full number)
+#
+# %statusplugin_total_deaths% - Total tracked player deaths (short style)
+# %statusplugin_total_deaths_raw% - Total tracked player deaths (full number)
 #
 # Country placeholders return empty strings when country-location-enabled is false

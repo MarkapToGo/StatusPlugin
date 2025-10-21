@@ -69,6 +69,16 @@ public class StatusPlaceholder extends PlaceholderExpansion {
             return countryData != null ? countryData.getCountryCode() : "";
         } else if (identifier.equals("deaths")) {
             return String.valueOf(plugin.getPlayerDeaths(player.getUniqueId()));
+        } else if (identifier.equalsIgnoreCase("performance") || identifier.equalsIgnoreCase("performance_label")) {
+            return plugin.getPerformanceLabel();
+        } else if (identifier.equalsIgnoreCase("total_blocks")) {
+            return plugin.getFormattedTotalBlocksPlaced();
+        } else if (identifier.equalsIgnoreCase("total_blocks_raw")) {
+            return String.valueOf(plugin.getTotalBlocksPlaced());
+        } else if (identifier.equalsIgnoreCase("total_deaths")) {
+            return plugin.getFormattedTotalTrackedDeaths();
+        } else if (identifier.equalsIgnoreCase("total_deaths_raw")) {
+            return String.valueOf(plugin.getTotalTrackedDeaths());
         }
 
         return null;
