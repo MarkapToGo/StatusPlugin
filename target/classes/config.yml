@@ -7,7 +7,7 @@
 # Version                                          
 # Used for comparing against latest plugin version 
 # -------------------------------------------------
-current_version: "5.3"
+current_version: "5.4"
 
 # -------------------------------------------------
 # Command                                           
@@ -35,6 +35,7 @@ chat-format-no-status: "&r<$$PLAYER$$> &e%countrycode%"
 # -------------------------------------------------
 tab-list-format: "&a%status% &r$$PLAYER$$ &e%countrycode% &8[&c☠ %deaths%&8]"
 tab-list-format-no-status: "&r$$PLAYER$$ &e%countrycode% &8[&c☠ %deaths%&8]"
+custom-tablist-enabled: false # Edit tablist.yml to configure header/footer when enabled
 
 # -------------------------------------------------
 # Permissions                                       

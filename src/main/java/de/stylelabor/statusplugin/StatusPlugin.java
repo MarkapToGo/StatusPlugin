@@ -2,6 +2,7 @@ package de.stylelabor.statusplugin;
 
 import me.neznamy.tab.api.TabAPI;
 import me.neznamy.tab.api.TabPlayer;
+import me.neznamy.tab.api.tablist.HeaderFooterManager;
 import me.neznamy.tab.api.tablist.TabListFormatManager;
 import net.md_5.bungee.api.chat.BaseComponent;
 import net.md_5.bungee.api.chat.ClickEvent;
@@ -9,24 +10,30 @@ import net.md_5.bungee.api.chat.TextComponent;
 import org.bstats.bukkit.Metrics;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.OfflinePlayer;
+import org.bukkit.World;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
-import org.bukkit.OfflinePlayer;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
-import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.Locale;
 
 public final class StatusPlugin extends JavaPlugin implements Listener, TabCompleter {
 
@@ -34,6 +41,9 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     private final HashMap<UUID, Integer> playerDeathMap = new HashMap<>();
     private String commandName;
     private String tabListFormat;
+    private boolean customTabListEnabled;
+    private List<String> tabListHeaderLines = Collections.emptyList();
+    private List<String> tabListFooterLines = Collections.emptyList();
     private final HashMap<String, String> statusOptions = new HashMap<>();
     private FileConfiguration languageConfig;
     private FileConfiguration playerStatusConfig;
@@ -44,6 +54,8 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     private boolean isDiscordSrvPresent;
     private CountryLocationManager countryLocationManager;
     private static final ThreadLocal<Boolean> relayingToDiscord = ThreadLocal.withInitial(() -> false);
+    private static final DateTimeFormatter TABLIST_TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault());
+    private static final String PLACEHOLDER_NOT_AVAILABLE = "N/A";
 
     @Override
     public void onEnable() {
@@ -287,7 +299,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
                 Player refreshedOnlineTarget = Bukkit.getPlayer(targetUuid);
                 if (refreshedOnlineTarget != null) {
                     if (getConfig().getBoolean("tab-styling-enabled", true)) {
-                        updatePlayerTabListName(refreshedOnlineTarget);
+                        updatePlayerTabListName(refreshedOnlineTarget, TabEnvironmentSnapshot.capture(this));
                     }
                     refreshedOnlineTarget.sendMessage(ChatColor.GOLD + "Your tracked deaths were updated to " + ChatColor.AQUA + newDeaths + ChatColor.GOLD + " by an administrator.");
                 }
@@ -400,7 +412,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             savePlayerDeathsConfig();
         }
         if (getConfig().getBoolean("tab-styling-enabled", true)) {
-            updatePlayerTabListName(player);
+            updatePlayerTabListName(player, TabEnvironmentSnapshot.capture(this));
         }
     }
 
@@ -580,9 +592,11 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         tabListFormat = config.getString("tab-list-format", "&a%status% &r$$PLAYER$$ &e%countrycode% &c%deaths%");
         defaultLanguage = config.getString("default-language", "english");
         useOnlyOneLanguage = config.getBoolean("use-only-one-language", true);
+        customTabListEnabled = config.getBoolean("custom-tablist-enabled", false);
 
         // Load status options from status-options.yml
         loadStatusOptions();
+        loadTabListConfig();
 
         // Load the default status options
         boolean defaultStatusEnabled = config.getBoolean("default_status_enabled", true);
@@ -604,6 +618,29 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
                 statusOptions.put(key.toUpperCase(), statusOptionsConfig.getString("status." + key));
             }
         }
+    }
+
+    private void loadTabListConfig() {
+        File tabListFile = new File(getDataFolder(), "tablist.yml");
+        if (!tabListFile.exists()) {
+            saveResource("tablist.yml", false);
+        }
+
+        FileConfiguration tabListConfig = YamlConfiguration.loadConfiguration(tabListFile);
+
+        List<String> headerLines = tabListConfig.getStringList("header");
+        if (headerLines.isEmpty() && tabListConfig.isString("header")) {
+            String headerLine = tabListConfig.getString("header");
+            headerLines = Collections.singletonList(headerLine == null ? "" : headerLine);
+        }
+        tabListHeaderLines = headerLines.isEmpty() ? Collections.emptyList() : new ArrayList<>(headerLines);
+
+        List<String> footerLines = tabListConfig.getStringList("footer");
+        if (footerLines.isEmpty() && tabListConfig.isString("footer")) {
+            String footerLine = tabListConfig.getString("footer");
+            footerLines = Collections.singletonList(footerLine == null ? "" : footerLine);
+        }
+        tabListFooterLines = footerLines.isEmpty() ? Collections.emptyList() : new ArrayList<>(footerLines);
     }
 
     private void loadLanguageConfig() {
@@ -685,9 +722,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     }
 
     private void updatePlayerTabList() {
-        if (!getConfig().getBoolean("tab-styling-enabled", true)) {
-            return; // Skip tab styling if disabled
-        }
+        TabEnvironmentSnapshot snapshot = TabEnvironmentSnapshot.capture(this);
 
         // Get a list of all online players
         List<Player> players = new ArrayList<>(Bukkit.getOnlinePlayers());
@@ -695,9 +730,13 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         // Update the tab list for each player in the sorted order
         for (int i = 0; i < players.size(); i++) {
             Player player = players.get(i);
-            String invisiblePrefix = ChatColor.COLOR_CHAR + "" + (char)('a' + i);
-            player.setDisplayName(invisiblePrefix + player.getName());
-            updatePlayerTabListName(player);
+            if (snapshot.tabStylingEnabled) {
+                String invisiblePrefix = ChatColor.COLOR_CHAR + "" + (char) ('a' + i);
+                player.setDisplayName(invisiblePrefix + player.getName());
+            } else {
+                player.setDisplayName(player.getName());
+            }
+            updatePlayerTabListName(player, snapshot);
         }
     }
 
@@ -715,60 +754,231 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
 
 
 
-    private void updatePlayerTabListName(Player player) {
+    private void updatePlayerTabListName(Player player, TabEnvironmentSnapshot snapshot) {
         String status = playerStatusMap.getOrDefault(player.getUniqueId(), "");
         String playerName = player.getName();
         String adminStatusFormat = statusOptions.get("ADMIN");
         boolean usingAdminStatus = adminStatusFormat != null && adminStatusFormat.equals(status);
         String coloredPlayerName = usingAdminStatus ? ChatColor.RED + playerName + ChatColor.RESET : playerName;
-        String tabListName;
 
-        if (status.isEmpty()) {
-            // Use a format for no status that still includes country code
-            String noStatusFormat = getConfig().getString("tab-list-format-no-status", "&7[&e%countrycode%&7] &r$$PLAYER$$");
-            tabListName = noStatusFormat.replace("$$PLAYER$$", coloredPlayerName);
-        } else {
-            tabListName = tabListFormat.replace("%status%", status).replace("$$PLAYER$$", coloredPlayerName);
+        CountryLocationManager.CountryData countryData = null;
+        if (snapshot.countryPlaceholdersEnabled) {
+            countryData = countryLocationManager.getPlayerCountry(player.getUniqueId());
         }
-        
-        // Replace country placeholders for both cases (only if country location is enabled)
-        if (getConfig().getBoolean("country-location-enabled", false) && 
-            countryLocationManager != null) {
-            CountryLocationManager.CountryData countryData = countryLocationManager.getPlayerCountry(player.getUniqueId());
-            if (countryData != null) {
-                tabListName = tabListName.replace("%country%", countryData.getCountry());
-                tabListName = tabListName.replace("%countrycode%", countryData.getCountryCode());
+
+        if (snapshot.tabStylingEnabled) {
+            String template = status.isEmpty()
+                    ? getConfig().getString("tab-list-format-no-status", "&7[&e%countrycode%&7] &r$$PLAYER$$")
+                    : tabListFormat;
+            String tabListName = formatTabListText(template, player, status, coloredPlayerName, countryData, snapshot);
+            tabListName = ChatColor.translateAlternateColorCodes('&', tabListName);
+
+            if (isTabPluginPresent) {
+                // Update the tab list name using TAB API
+                TabPlayer tabPlayer = TabAPI.getInstance().getPlayer(player.getUniqueId());
+                TabListFormatManager formatManager = TabAPI.getInstance().getTabListFormatManager();
+                if (tabPlayer != null && formatManager != null) {
+                    formatManager.setPrefix(tabPlayer, null); // Reset prefix
+                    formatManager.setName(tabPlayer, tabListName); // Set custom name
+                    formatManager.setSuffix(tabPlayer, null); // Reset suffix
+                }
             } else {
-                tabListName = tabListName.replace("%country%", "");
-                tabListName = tabListName.replace("%countrycode%", "");
+                // Fallback to default method
+                player.setPlayerListName(tabListName);
             }
         } else {
-            tabListName = tabListName.replace("%country%", "");
-            tabListName = tabListName.replace("%countrycode%", "");
+            resetTabListName(player);
         }
 
-        tabListName = tabListName.replace("%deaths%", String.valueOf(getPlayerDeaths(player.getUniqueId())));
-        
-        tabListName = ChatColor.translateAlternateColorCodes('&', tabListName);
+        applyTabListHeaderFooter(player, snapshot, status, coloredPlayerName, countryData);
+    }
 
+    private void resetTabListName(Player player) {
         if (isTabPluginPresent) {
-            // Update the tab list name using TAB API
             TabPlayer tabPlayer = TabAPI.getInstance().getPlayer(player.getUniqueId());
             TabListFormatManager formatManager = TabAPI.getInstance().getTabListFormatManager();
             if (tabPlayer != null && formatManager != null) {
-                formatManager.setPrefix(tabPlayer, null); // Reset prefix
-                formatManager.setName(tabPlayer, tabListName); // Set custom name
-                formatManager.setSuffix(tabPlayer, null); // Reset suffix
+                formatManager.setPrefix(tabPlayer, null);
+                formatManager.setName(tabPlayer, player.getName());
+                formatManager.setSuffix(tabPlayer, null);
             }
         } else {
-            // Fallback to default method
-            player.setPlayerListName(tabListName);
+            player.setPlayerListName(player.getName());
         }
     }
 
+    private void applyTabListHeaderFooter(Player player, TabEnvironmentSnapshot snapshot, String status, String coloredPlayerName, CountryLocationManager.CountryData countryData) {
+        String header = "";
+        String footer = "";
 
+        if (customTabListEnabled) {
+            header = formatTabListSection(tabListHeaderLines, player, status, coloredPlayerName, countryData, snapshot);
+            footer = formatTabListSection(tabListFooterLines, player, status, coloredPlayerName, countryData, snapshot);
+        }
 
+        header = ChatColor.translateAlternateColorCodes('&', header);
+        footer = ChatColor.translateAlternateColorCodes('&', footer);
 
+        if (isTabPluginPresent) {
+            TabPlayer tabPlayer = TabAPI.getInstance().getPlayer(player.getUniqueId());
+            HeaderFooterManager headerFooterManager = TabAPI.getInstance().getHeaderFooterManager();
+            if (tabPlayer != null && headerFooterManager != null) {
+                headerFooterManager.setHeaderAndFooter(tabPlayer, header, footer);
+            }
+        } else {
+            player.setPlayerListHeaderFooter(header, footer);
+        }
+    }
+
+    private String formatTabListSection(List<String> lines, Player player, String status, String coloredPlayerName, CountryLocationManager.CountryData countryData, TabEnvironmentSnapshot snapshot) {
+        if (lines == null || lines.isEmpty()) {
+            return "";
+        }
+
+        StringBuilder builder = new StringBuilder();
+        for (String line : lines) {
+            String processed = formatTabListText(line == null ? "" : line, player, status, coloredPlayerName, countryData, snapshot);
+            if (builder.length() > 0) {
+                builder.append('\n');
+            }
+            builder.append(processed);
+        }
+
+        return builder.toString();
+    }
+
+    private String formatTabListText(String template, Player player, String status, String coloredPlayerName, CountryLocationManager.CountryData countryData, TabEnvironmentSnapshot snapshot) {
+        if (template == null) {
+            return "";
+        }
+
+        String result = template
+                .replace("$$PLAYER$$", coloredPlayerName)
+                .replace("%status%", status)
+                .replace("%deaths%", String.valueOf(getPlayerDeaths(player.getUniqueId())))
+                .replace("%online_players%", String.valueOf(snapshot.onlinePlayers))
+                .replace("%max_players%", String.valueOf(snapshot.maxPlayers))
+                .replace("%overworld_players%", String.valueOf(snapshot.overworldPlayers))
+                .replace("%nether_players%", String.valueOf(snapshot.netherPlayers))
+                .replace("%end_players%", String.valueOf(snapshot.endPlayers))
+                .replace("%server_time%", snapshot.serverTime)
+                .replace("%time%", snapshot.serverTime)
+                .replace("%tps%", snapshot.tps1m)
+                .replace("%tps_1m%", snapshot.tps1m)
+                .replace("%tps_5m%", snapshot.tps5m)
+                .replace("%tps_15m%", snapshot.tps15m);
+
+        return replaceCountryPlaceholders(result, countryData);
+    }
+
+    private int countPlayersInEnvironment(World.Environment environment) {
+        int total = 0;
+        for (World world : Bukkit.getWorlds()) {
+            if (world.getEnvironment() == environment) {
+                total += world.getPlayers().size();
+            }
+        }
+        return total;
+    }
+
+    private double[] fetchRecentTps() {
+        try {
+            Method method = Bukkit.getServer().getClass().getMethod("getServer");
+            Object dedicatedServer = method.invoke(Bukkit.getServer());
+            Field recentTpsField = dedicatedServer.getClass().getField("recentTps");
+            recentTpsField.setAccessible(true);
+            double[] values = (double[]) recentTpsField.get(dedicatedServer);
+            return values != null ? values.clone() : null;
+        } catch (ReflectiveOperationException | ClassCastException e) {
+            return null;
+        }
+    }
+
+    private String getCurrentServerTime() {
+        return LocalTime.now().format(TABLIST_TIME_FORMAT);
+    }
+
+    private static String formatTpsValue(double[] values, int index) {
+        if (values != null && index >= 0 && index < values.length) {
+            double value = Math.min(values[index], 20.0D);
+            return String.format(Locale.US, "%.2f", value);
+        }
+        return PLACEHOLDER_NOT_AVAILABLE;
+    }
+
+    private static final class TabEnvironmentSnapshot {
+        private final boolean tabStylingEnabled;
+        private final boolean countryPlaceholdersEnabled;
+        private final String serverTime;
+        private final int overworldPlayers;
+        private final int netherPlayers;
+        private final int endPlayers;
+        private final int onlinePlayers;
+        private final int maxPlayers;
+        private final String tps1m;
+        private final String tps5m;
+        private final String tps15m;
+
+        private TabEnvironmentSnapshot(boolean tabStylingEnabled,
+                                       boolean countryPlaceholdersEnabled,
+                                       String serverTime,
+                                       int overworldPlayers,
+                                       int netherPlayers,
+                                       int endPlayers,
+                                       int onlinePlayers,
+                                       int maxPlayers,
+                                       String tps1m,
+                                       String tps5m,
+                                       String tps15m) {
+            this.tabStylingEnabled = tabStylingEnabled;
+            this.countryPlaceholdersEnabled = countryPlaceholdersEnabled;
+            this.serverTime = serverTime;
+            this.overworldPlayers = overworldPlayers;
+            this.netherPlayers = netherPlayers;
+            this.endPlayers = endPlayers;
+            this.onlinePlayers = onlinePlayers;
+            this.maxPlayers = maxPlayers;
+            this.tps1m = tps1m;
+            this.tps5m = tps5m;
+            this.tps15m = tps15m;
+        }
+
+        private static TabEnvironmentSnapshot capture(StatusPlugin plugin) {
+            boolean tabStylingEnabled = plugin.getConfig().getBoolean("tab-styling-enabled", true);
+            boolean countryEnabled = plugin.getConfig().getBoolean("country-location-enabled", false)
+                    && plugin.countryLocationManager != null;
+            double[] tpsValues = plugin.fetchRecentTps();
+            return new TabEnvironmentSnapshot(
+                    tabStylingEnabled,
+                    countryEnabled,
+                    plugin.getCurrentServerTime(),
+                    plugin.countPlayersInEnvironment(World.Environment.NORMAL),
+                    plugin.countPlayersInEnvironment(World.Environment.NETHER),
+                    plugin.countPlayersInEnvironment(World.Environment.THE_END),
+                    Bukkit.getOnlinePlayers().size(),
+                    Bukkit.getMaxPlayers(),
+                    formatTpsValue(tpsValues, 0),
+                    formatTpsValue(tpsValues, 1),
+                    formatTpsValue(tpsValues, 2)
+            );
+        }
+    }
+
+    private String replaceCountryPlaceholders(String text, CountryLocationManager.CountryData countryData) {
+        if (text == null) {
+            return "";
+        }
+
+        if (countryData != null) {
+            text = text.replace("%country%", countryData.getCountry());
+            text = text.replace("%countrycode%", countryData.getCountryCode());
+        } else {
+            text = text.replace("%country%", "");
+            text = text.replace("%countrycode%", "");
+        }
+
+        return text;
+    }
     private void reloadPlugin() {
         reloadConfig();
         loadConfig();

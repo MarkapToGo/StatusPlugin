@@ -2,7 +2,7 @@
 # This file contains the available status options for the StatusPlugin.
 
 status:
-  ADMIN: "&4[&lADMIN&4]"
+  ADMIN: "&4[&l★ ADMIN&4]"
   GHG: "&7[&5GHG&7]"
   RAINBOW: "&x&F&F&0&0&0&0[&x&F&F&5&F&0&0R&x&F&F&B&F&0&0A&x&B&F&F&F&0&0I&x&0&0&F&F&0&0N&x&0&0&4&0&B&FB&x&2&6&0&0&C&0O&x&5&D&0&0&9&6W&x&9&4&0&0&D&3]"
   QUESTION: "&x&F&F&E&2&5&9[&x&F&F&C&5&5&5?&x&F&F&A&7&5&1]"
@@ -25,7 +25,7 @@ status:
   SHADOW: "&7[&x&6&9&6&9&6&9S&x&5&D&5&D&5&Eh&x&5&2&5&1&5&2a&x&4&6&4&6&4&7d&x&3&B&3&A&3&Bo&x&2&F&2&E&3&0w&7]"
   HAPPY2: "&8[&x&B&F&A&7&6&5☻&8]"
   CHERRY: "&7[&x&9&8&6&3&E&7C&x&A&A&7&7&E&5h&x&B&C&8&B&E&3e&x&C&E&9&E&E&2r&x&E&0&B&2&E&0r&x&F&2&C&6&D&Ey&7]"
-
+  
 
 # --> All gradients generated with https://www.birdflop.com/resources/rgb/
 # --> All emojis are from https://hypixel.net/threads/%E3%83%84symbols%E2%98%BB.787483/

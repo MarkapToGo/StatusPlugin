@@ -1,0 +1,34 @@
+###############################################
+# StatusPlugin Custom Tab List
+# Toggle via custom-tablist-enabled in config.yml
+# Available placeholders:
+#   %status%           - Player's status text
+#   %country%          - Country name (requires country-location-enabled)
+#   %countrycode%      - Country code (requires country-location-enabled)
+#   %deaths%           - Player's tracked death count
+#   $$PLAYER$$         - Player name (ADMIN status keeps red coloring)
+#   %online_players%   - Current online player count
+#   %max_players%      - Server max players
+#   %overworld_players% - Players in overworld environments
+#   %nether_players%   - Players in nether environments
+#   %end_players%      - Players in end environments
+#   %server_time%/%time% - System time in HH:mm format
+#   %tps%/%tps_1m%     - 1-minute server TPS (auto-clamped to 20)
+#   %tps_5m%           - 5-minute server TPS
+#   %tps_15m%          - 15-minute server TPS
+# Use & for color codes. Leave a line as "" for blank lines.
+###############################################
+header:
+  - "&a&lStatusPlugin"
+  - "&7Welcome, $$PLAYER$$"
+  - "&fStatus: %status%"
+  - ""
+  - "&aOnline: %online_players%&7/&f%max_players%"
+  - "&7TPS: &a%tps_1m% &8(&75m: &a%tps_5m%&8 | &715m: &a%tps_15m%&8)"
+  - "&7Time: &f%server_time%"
+
+footer:
+  - "&7Deaths: &c%deaths%"
+  - "&7Country: &b%countrycode%"
+  - "&7Dimensions &8| &fOverworld: &a%overworld_players% &8| &cNether: &c%nether_players% &8| &dEnd: &d%end_players%"
+  - "&fHave fun on the server!"
