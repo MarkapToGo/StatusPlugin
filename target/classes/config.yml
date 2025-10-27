@@ -7,7 +7,7 @@
 # Version                                          
 # Used for comparing against latest plugin version 
 # -------------------------------------------------
-current_version: "5.6"
+current_version: "5.8"
 
 # -------------------------------------------------
 # Command                                           
@@ -38,6 +38,7 @@ tab-list-format-no-status: "&r$$PLAYER$$ &e%countrycode% &8[&c☠ %deaths%&8]"
 custom-tablist-enabled: false # Edit tablist.yml to configure header/footer when enabled
 tab-refresh-interval-ticks: 20 # How often dynamic tab placeholders refresh (20 ticks = 1 second)
 tab-dimension-refresh-interval-ticks: 200 # How often dimension player counts refresh (200 ticks = 10 seconds)
+tab-list-sort-by-status: true # Sort players by status (Admins → Mods → Status → AFK/CAM at end)
 # Extra tab placeholders: %total_blocks%, %total_blocks_broken%, %total_deaths%, %performance%, %rotating_line%, %online_players%, %max_players%, %overworld_players%, %nether_players%, %end_players%, %server_time%, %tps%, %tps_5m%, %tps_15m%
 
 # -------------------------------------------------

@@ -2,7 +2,10 @@
 # This file contains the available status options for the StatusPlugin.
 
 status:
+# Admin status & Mod status
   ADMIN: "&4[&l★ ADMIN&4]"
+  MOD: "&9[&l★ MOD&9]"
+# Status options
   GHG: "&7[&5GHG&7]"
   RAINBOW: "&x&F&F&0&0&0&0[&x&F&F&5&F&0&0R&x&F&F&B&F&0&0A&x&B&F&F&F&0&0I&x&0&0&F&F&0&0N&x&0&0&4&0&B&FB&x&2&6&0&0&C&0O&x&5&D&0&0&9&6W&x&9&4&0&0&D&3]"
   QUESTION: "&x&F&F&E&2&5&9[&x&F&F&C&5&5&5?&x&F&F&A&7&5&1]"

@@ -29,6 +29,8 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.scoreboard.Scoreboard;
+import org.bukkit.scoreboard.Team;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
@@ -80,6 +82,8 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     private static final DateTimeFormatter TABLIST_TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault());
     private static final String PLACEHOLDER_NOT_AVAILABLE = "N/A";
     private static final int STATS_AUTOSAVE_INTERVAL_TICKS = 6000;
+    private Scoreboard sortingScoreboard;
+    private final HashMap<String, Team> statusTeams = new HashMap<>();
 
     @Override
     public void onEnable() {
@@ -126,6 +130,11 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
 
         refreshDimensionCache();
         startTabRefreshSchedulers();
+        
+        // Initialize scoreboard for tab list sorting (delayed to ensure server is ready)
+        if (getConfig().getBoolean("tab-list-sort-by-status", true)) {
+            Bukkit.getScheduler().runTask(this, this::initializeSortingScoreboard);
+        }
 
     }
 
@@ -188,9 +197,16 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
                         player.sendMessage(ChatColor.RED + "Only admins can use the ADMIN status.");
                         return true;
                     }
+                    if ("MOD".equals(statusKey) && !player.hasPermission("statusplugin.mod")) {
+                        player.sendMessage(ChatColor.RED + "Only moderators can use the MOD status.");
+                        return true;
+                    }
                     playerStatusMap.put(player.getUniqueId(), status);
                     String message = getLanguageText(player, "status_set", "&aYour status has been set to: &r%s");
                     player.sendMessage(ChatColor.translateAlternateColorCodes('&', String.format(message, status)));
+                    
+                    // Assign player to team for sorting
+                    assignPlayerToTeam(player);
                     updatePlayerTabList();
 
                     // Save the player status to player-status.yml
@@ -204,6 +220,9 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
                 playerStatusMap.remove(player.getUniqueId());
                 String message = getLanguageText(player, "status_cleared", "&aYour status has been cleared.");
                 player.sendMessage(ChatColor.translateAlternateColorCodes('&', message));
+                
+                // Assign player to team for sorting
+                assignPlayerToTeam(player);
                 updatePlayerTabList();
 
                 // Clear the player status in player-status.yml
@@ -221,6 +240,9 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             playerStatusMap.remove(player.getUniqueId());
             String message = getLanguageText(player, "status_cleared", "&aYour status has been cleared.");
             player.sendMessage(ChatColor.translateAlternateColorCodes('&', message));
+            
+            // Assign player to team for sorting
+            assignPlayerToTeam(player);
             updatePlayerTabList();
 
             // Clear the player status in player-status.yml
@@ -337,7 +359,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
                 Player refreshedOnlineTarget = Bukkit.getPlayer(targetUuid);
                 if (refreshedOnlineTarget != null) {
                     if (getConfig().getBoolean("tab-styling-enabled", true)) {
-                        updatePlayerTabListName(refreshedOnlineTarget, TabEnvironmentSnapshot.capture(this));
+                        updatePlayerTabListName(refreshedOnlineTarget, TabEnvironmentSnapshot.capture(this), "");
                     }
                     refreshedOnlineTarget.sendMessage(ChatColor.GOLD + "Your tracked deaths were updated to " + ChatColor.AQUA + newDeaths + ChatColor.GOLD + " by an administrator.");
                 }
@@ -378,10 +400,17 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
                 sender.sendMessage(ChatColor.RED + "ADMIN status can only be applied to admins or operators.");
                 return true;
             }
+            if ("MOD".equals(statusKey) && !targetPlayer.hasPermission("statusplugin.mod")) {
+                sender.sendMessage(ChatColor.RED + "MOD status can only be applied to moderators.");
+                return true;
+            }
 
             playerStatusMap.put(targetPlayer.getUniqueId(), status);
             String message = getLanguageText(targetPlayer, "status_set", "&aYour status has been set to: &r%s");
             targetPlayer.sendMessage(ChatColor.translateAlternateColorCodes('&', String.format(message, status)));
+            
+            // Assign player to team for sorting
+            assignPlayerToTeam(targetPlayer);
             updatePlayerTabList();
 
             playerStatusConfig.set(targetPlayer.getUniqueId().toString(), status);
@@ -435,6 +464,8 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
 
         // Update tab list if tab styling is enabled
         if (getConfig().getBoolean("tab-styling-enabled", true)) {
+            // Assign player to team for sorting
+            assignPlayerToTeam(player);
             updatePlayerTabList();
         }
     }
@@ -455,7 +486,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             serverStatsDirty = true;
         }
         if (getConfig().getBoolean("tab-styling-enabled", true)) {
-            updatePlayerTabListName(player, TabEnvironmentSnapshot.capture(this));
+            updatePlayerTabListName(player, TabEnvironmentSnapshot.capture(this), "");
         }
     }
 
@@ -583,13 +614,18 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
                 // Auto-complete status options
                 String prefix = args[0].toUpperCase(Locale.ROOT);
                 boolean canUseAdminStatus = true;
+                boolean canUseModStatus = true;
                 if (sender instanceof Player) {
                     Player playerSender = (Player) sender;
                     canUseAdminStatus = playerSender.isOp() || playerSender.hasPermission("statusplugin.admin");
+                    canUseModStatus = playerSender.hasPermission("statusplugin.mod");
                 }
                 for (String option : statusOptions.keySet()) {
                     if (option.startsWith(prefix)) {
                         if ("ADMIN".equals(option) && !canUseAdminStatus) {
+                            continue;
+                        }
+                        if ("MOD".equals(option) && !canUseModStatus) {
                             continue;
                         }
                         completions.add(option);
@@ -869,8 +905,151 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         }
     }
 
+    /**
+     * Initialize the scoreboard for tab list sorting using teams
+     */
+    private void initializeSortingScoreboard() {
+        try {
+            if (Bukkit.getScoreboardManager() == null) {
+                getLogger().warning("ScoreboardManager is not available yet. Tab list sorting will be disabled.");
+                return;
+            }
+            
+            sortingScoreboard = Bukkit.getScoreboardManager().getMainScoreboard();
+            statusTeams.clear();
+            getLogger().info("Initialized tab list sorting scoreboard");
+        } catch (Exception e) {
+            getLogger().severe("Failed to initialize scoreboard for tab list sorting: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    
+    /**
+     * Get or create a team for a specific status with the appropriate sorting prefix
+     */
+    private Team getOrCreateStatusTeam(String statusKey) {
+        if (sortingScoreboard == null) {
+            return null;
+        }
+        
+        // Create a unique team name with sorting prefix
+        String teamName = getTeamNameForStatus(statusKey);
+        
+        // Check cache first
+        Team team = statusTeams.get(teamName);
+        if (team != null) {
+            return team;
+        }
+        
+        // Check if team already exists on the scoreboard
+        team = sortingScoreboard.getTeam(teamName);
+        if (team == null) {
+            // Team doesn't exist, create it
+            try {
+                team = sortingScoreboard.registerNewTeam(teamName);
+            } catch (IllegalArgumentException e) {
+                // Team already exists (race condition), get it
+                team = sortingScoreboard.getTeam(teamName);
+            }
+        }
+        
+        // Add to cache
+        if (team != null) {
+            statusTeams.put(teamName, team);
+        }
+        
+        return team;
+    }
+    
+    /**
+     * Get the team name with sorting prefix for a status
+     * Format: <priority>_<statusname>
+     * Priority: 0=ADMIN, 1=MOD, 2=normal, 9=AFK/CAM
+     */
+    private String getTeamNameForStatus(String statusKey) {
+        if (statusKey == null || statusKey.isEmpty()) {
+            return "2_nostatus";
+        }
+        
+        String upperKey = statusKey.toUpperCase(Locale.ROOT);
+        switch (upperKey) {
+            case "ADMIN":
+                return "0_admin";
+            case "MOD":
+                return "1_mod";
+            case "AFK":
+                return "9_afk";
+            case "CAM":
+                return "9_cam";
+            default:
+                // Use status key for alphabetical sorting within normal statuses
+                return "2_" + statusKey.toLowerCase(Locale.ROOT);
+        }
+    }
+    
+    /**
+     * Assign a player to the appropriate team based on their status
+     */
+    private void assignPlayerToTeam(Player player) {
+        if (sortingScoreboard == null || !getConfig().getBoolean("tab-list-sort-by-status", true)) {
+            return;
+        }
+        
+        try {
+            String status = playerStatusMap.getOrDefault(player.getUniqueId(), "");
+            String statusKey = getStatusKey(status);
+            
+            // Remove player from any existing team in the scoreboard
+            Team currentTeam = sortingScoreboard.getEntryTeam(player.getName());
+            if (currentTeam != null) {
+                currentTeam.removeEntry(player.getName());
+            }
+            
+            // Add player to the appropriate team
+            Team team = getOrCreateStatusTeam(statusKey);
+            if (team != null) {
+                team.addEntry(player.getName());
+            }
+            
+            // Set the scoreboard for the player (only if they don't have one or have different one)
+            if (player.getScoreboard() != sortingScoreboard) {
+                player.setScoreboard(sortingScoreboard);
+            }
+        } catch (Exception e) {
+            getLogger().warning("Failed to assign player " + player.getName() + " to team: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Update all players' team assignments
+     */
+    private void updateAllPlayerTeams() {
+        if (sortingScoreboard == null || !getConfig().getBoolean("tab-list-sort-by-status", true)) {
+            return;
+        }
+        
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            assignPlayerToTeam(player);
+        }
+    }
+
     private void updatePlayerTabList() {
         updatePlayerTabList(TabEnvironmentSnapshot.capture(this));
+    }
+
+    /**
+     * Get the status key from the status value (reverse lookup)
+     */
+    private String getStatusKey(String statusValue) {
+        if (statusValue == null || statusValue.isEmpty()) {
+            return "";
+        }
+        for (Map.Entry<String, String> entry : statusOptions.entrySet()) {
+            if (entry.getValue().equals(statusValue)) {
+                return entry.getKey();
+            }
+        }
+        return "";
     }
 
     private void updatePlayerTabList(TabEnvironmentSnapshot snapshot) {
@@ -878,19 +1057,15 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             return;
         }
 
-        // Get a list of all online players
-        List<Player> players = new ArrayList<>(Bukkit.getOnlinePlayers());
+        // Update team assignments for all players (this handles the sorting)
+        boolean sortByStatus = getConfig().getBoolean("tab-list-sort-by-status", true);
+        if (sortByStatus && sortingScoreboard != null) {
+            updateAllPlayerTeams();
+        }
 
-        // Update the tab list for each player in the sorted order
-        for (int i = 0; i < players.size(); i++) {
-            Player player = players.get(i);
-            if (snapshot.tabStylingEnabled) {
-                String invisiblePrefix = ChatColor.COLOR_CHAR + "" + (char) ('a' + i);
-                player.setDisplayName(invisiblePrefix + player.getName());
-            } else {
-                player.setDisplayName(player.getName());
-            }
-            updatePlayerTabListName(player, snapshot);
+        // Update the tab list display for each player
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            updatePlayerTabListName(player, snapshot, "");
         }
     }
 
@@ -1019,7 +1194,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
 
 
 
-    private void updatePlayerTabListName(Player player, TabEnvironmentSnapshot snapshot) {
+    private void updatePlayerTabListName(Player player, TabEnvironmentSnapshot snapshot, String invisibleSortPrefix) {
         String status = playerStatusMap.getOrDefault(player.getUniqueId(), "");
         String playerName = player.getName();
         String adminStatusFormat = statusOptions.get("ADMIN");
@@ -1037,6 +1212,9 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
                     : tabListFormat;
             String tabListName = formatTabListText(template, player, status, coloredPlayerName, countryData, snapshot);
             tabListName = ChatColor.translateAlternateColorCodes('&', tabListName);
+            
+            // Add invisible sorting prefix to force tab list order
+            tabListName = invisibleSortPrefix + tabListName;
 
             if (isTabPluginPresent) {
                 // Update the tab list name using TAB API
@@ -1345,6 +1523,17 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         loadPlayerDeaths();
         refreshDimensionCache();
         startTabRefreshSchedulers();
+        
+        // Reinitialize scoreboard for sorting
+        if (getConfig().getBoolean("tab-list-sort-by-status", true)) {
+            // Clear existing team cache
+            statusTeams.clear();
+            if (sortingScoreboard == null) {
+                initializeSortingScoreboard();
+            }
+            updateAllPlayerTeams();
+        }
+        
         updatePlayerTabList();
     }
 }
