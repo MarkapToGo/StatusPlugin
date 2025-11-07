@@ -10,8 +10,8 @@ saved_status_message: "&aYour saved status is set to: &r%s"
 # LibertyBans Mute Messages
 # Placeholders: %reason%, %duration%
 mute_title: "&c&lуᴏᴜ ᴀʀᴇ ᴍᴜᴛᴇᴅ!"
-mute_with_reason: "&7Reason: &f%reason%"
-mute_duration_temporary: "&7Duration: &e%duration%"
-mute_duration_permanent: "&7Duration: &4&lPERMANENT"
-mute_duration_expiring: "&7Duration: &eExpiring soon..."
+mute_with_reason: "&7► Reason: &f%reason%"
+mute_duration_temporary: "&7► Duration: &e%duration%"
+mute_duration_permanent: "&7► Duration: &4&lPERMANENT"
+mute_duration_expiring: "&7► Duration: &eExpiring soon..."
 mute_fallback: "&cYou are currently muted and cannot send messages."
