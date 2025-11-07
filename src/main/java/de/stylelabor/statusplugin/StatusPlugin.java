@@ -964,11 +964,11 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     /**
      * Get the team name with sorting prefix for a status
      * Format: <priority>_<statusname>
-     * Priority: 0=ADMIN, 1=MOD, 2=normal, 9=AFK/CAM
+     * Priority: 0=ADMIN, 1=MOD, 2=normal statuses, 9=AFK/CAM, z=no status (at the very end)
      */
     private String getTeamNameForStatus(String statusKey) {
         if (statusKey == null || statusKey.isEmpty()) {
-            return "2_nostatus";
+            return "z_nostatus"; // 'z' ensures it sorts last
         }
         
         String upperKey = statusKey.toUpperCase(Locale.ROOT);
