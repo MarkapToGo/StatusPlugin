@@ -2,8 +2,8 @@ name: StatusPlugin
 version: '1'
 main: de.stylelabor.statusplugin.StatusPlugin
 api-version: '1.14'
-load: STARTUP
-softdepend: [DiscordSRV]
+load: POSTWORLD
+softdepend: [DiscordSRV, LibertyBans]
 commands:
   status:
     description: Set a custom status

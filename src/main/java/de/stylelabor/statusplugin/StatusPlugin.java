@@ -20,6 +20,7 @@ import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
@@ -42,6 +43,15 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.Locale;
 
+import space.arim.omnibus.Omnibus;
+import space.arim.omnibus.OmnibusProvider;
+import space.arim.libertybans.api.LibertyBans;
+import space.arim.libertybans.api.PunishmentType;
+import space.arim.libertybans.api.punish.Punishment;
+
+import java.time.Instant;
+import java.time.Duration;
+
 public final class StatusPlugin extends JavaPlugin implements Listener, TabCompleter {
 
     private final HashMap<UUID, String> playerStatusMap = new HashMap<>();
@@ -60,6 +70,8 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     private boolean useOnlyOneLanguage;
     private String defaultLanguage;
     private boolean isDiscordSrvPresent;
+    private boolean isLibertyBansPresent;
+    private LibertyBans libertyBans;
     private CountryLocationManager countryLocationManager;
     private long totalBlocksPlaced;
     private long totalBlocksBroken;
@@ -108,6 +120,12 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         if (isDiscordSrvPresent) {
             getLogger().info("[StatusPlugin] DiscordSRV detected. Enabling Discord relay features.");
         }
+
+        // Delay LibertyBans initialization to ensure it's fully loaded
+        // Schedule this to run after server startup is complete
+        Bukkit.getScheduler().runTaskLater(this, () -> {
+            initializeLibertyBans();
+        }, 20L); // Wait 1 second (20 ticks) after plugin enable
 
         // Register PlaceholderAPI placeholder
         if (Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null) {
@@ -514,11 +532,36 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         }
     }
 
-    @EventHandler
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onPlayerChatMuteCheck(AsyncPlayerChatEvent event) {
+        // Check if player is muted by LibertyBans FIRST at LOWEST priority
+        // This ensures we catch mutes before any other processing
+        if (isLibertyBansPresent && libertyBans != null) {
+            Player player = event.getPlayer();
+            Punishment mutePunishment = getActiveMute(player);
+            
+            if (mutePunishment != null) {
+                // Player is muted - cancel the event immediately
+                event.setCancelled(true);
+                
+                // Send mute notification to the player
+                sendMuteNotification(player, mutePunishment);
+                return;
+            }
+        }
+    }
+    
+    @EventHandler(priority = EventPriority.HIGH)
     public void onPlayerChat(AsyncPlayerChatEvent event) {
         if (Boolean.TRUE.equals(relayingToDiscord.get())) {
             return; // Skip formatting/broadcast when relaying to avoid duplicates
         }
+        
+        // If event is already cancelled (e.g., by mute check), don't process
+        if (event.isCancelled()) {
+            return;
+        }
+        
         if (!getConfig().getBoolean("chat-styling-enabled", true)) {
             return; // Skip chat styling if disabled
         }
@@ -1510,6 +1553,149 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
 
         return text;
     }
+    
+    /**
+     * Initialize LibertyBans integration after all plugins have loaded
+     */
+    private void initializeLibertyBans() {
+        // Check for LibertyBans plugin
+        org.bukkit.plugin.Plugin libertyBansPlugin = Bukkit.getPluginManager().getPlugin("LibertyBans");
+        
+        if (libertyBansPlugin != null && libertyBansPlugin.isEnabled()) {
+            isLibertyBansPresent = true;
+            
+            try {
+                Omnibus omnibus = OmnibusProvider.getOmnibus();
+                
+                if (omnibus != null) {
+                    libertyBans = omnibus.getRegistry().getProvider(LibertyBans.class).orElse(null);
+                    
+                    if (libertyBans != null) {
+                        getLogger().info("========================================");
+                        getLogger().info("[StatusPlugin] LibertyBans DETECTED!");
+                        getLogger().info("[StatusPlugin] Mute checking is now ACTIVE");
+                        getLogger().info("[StatusPlugin] Muted players will be blocked from chat");
+                        getLogger().info("========================================");
+                    } else {
+                        getLogger().warning("[StatusPlugin] LibertyBans is installed but API could not be initialized.");
+                        isLibertyBansPresent = false;
+                    }
+                } else {
+                    getLogger().warning("[StatusPlugin] Could not get Omnibus - LibertyBans API unavailable");
+                    isLibertyBansPresent = false;
+                }
+            } catch (Exception e) {
+                getLogger().severe("[StatusPlugin] Failed to initialize LibertyBans API: " + e.getMessage());
+                e.printStackTrace();
+                isLibertyBansPresent = false;
+            }
+        } else {
+            isLibertyBansPresent = false;
+        }
+    }
+    
+    /**
+     * Get the active mute punishment for a player from LibertyBans
+     * This checks for both UUID-based and IP-based mutes
+     * @param player The player to check
+     * @return The active Punishment if the player is muted, null otherwise
+     */
+    private Punishment getActiveMute(Player player) {
+        if (libertyBans == null) {
+            return null;
+        }
+        
+        try {
+            // Use selectionByApplicabilityBuilder to check for both UUID and IP mutes
+            // This is the recommended approach according to LibertyBans API documentation
+            return libertyBans.getSelector()
+                    .selectionByApplicabilityBuilder(player.getUniqueId(), player.getAddress().getAddress())
+                    .type(PunishmentType.MUTE)
+                    .build()
+                    .getFirstSpecificPunishment()
+                    .thenApply(optional -> optional.orElse(null))
+                    .toCompletableFuture()
+                    .join(); // Block until we get the result
+        } catch (Exception e) {
+            getLogger().warning("[StatusPlugin] Error checking mute status for player " + player.getName() + ": " + e.getMessage());
+            return null;
+        }
+    }
+    
+    /**
+     * Send a mute notification to the player with reason and duration
+     * @param player The muted player
+     * @param punishment The mute punishment details
+     */
+    private void sendMuteNotification(Player player, Punishment punishment) {
+        try {
+            // Get messages from language config
+            String muteTitle = getLanguageText(player, "mute_title", "&c&lYOU ARE MUTED!");
+            String muteWithReason = getLanguageText(player, "mute_with_reason", "&7Reason: &f%reason%");
+            String muteDurationTemporary = getLanguageText(player, "mute_duration_temporary", "&7Duration: &e%duration%");
+            String muteDurationPermanent = getLanguageText(player, "mute_duration_permanent", "&7Duration: &4&lPERMANENT");
+            String muteDurationExpiring = getLanguageText(player, "mute_duration_expiring", "&7Duration: &eExpiring soon...");
+            
+            StringBuilder message = new StringBuilder();
+            message.append(ChatColor.translateAlternateColorCodes('&', muteTitle)).append("\n");
+            
+            // Add reason
+            String reason = punishment.getReason();
+            if (reason != null && !reason.isEmpty()) {
+                String reasonLine = muteWithReason.replace("%reason%", reason);
+                message.append(ChatColor.translateAlternateColorCodes('&', reasonLine)).append("\n");
+            }
+            
+            // Add duration - check for permanent mute (null end date or > 5 years)
+            Instant end = punishment.getEndDate();
+            if (end == null) {
+                // Permanent mute - null end date means permanent
+                message.append(ChatColor.translateAlternateColorCodes('&', muteDurationPermanent));
+            } else {
+                // Temporary mute - show remaining time
+                Duration remaining = Duration.between(Instant.now(), end);
+                
+                // If mute is longer than 5 years, treat it as permanent
+                long fiveYearsInDays = 365L * 5L;
+                if (remaining.toDays() > fiveYearsInDays) {
+                    message.append(ChatColor.translateAlternateColorCodes('&', muteDurationPermanent));
+                } else if (remaining.isNegative() || remaining.isZero()) {
+                    message.append(ChatColor.translateAlternateColorCodes('&', muteDurationExpiring));
+                } else {
+                    String durationLine = muteDurationTemporary.replace("%duration%", formatDuration(remaining));
+                    message.append(ChatColor.translateAlternateColorCodes('&', durationLine));
+                }
+            }
+            
+            player.sendMessage(message.toString());
+        } catch (Exception e) {
+            // Fallback message if something goes wrong
+            String fallback = getLanguageText(player, "mute_fallback", "&cYou are currently muted and cannot send messages.");
+            player.sendMessage(ChatColor.translateAlternateColorCodes('&', fallback));
+            getLogger().warning("[StatusPlugin] Error sending mute notification: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Format a duration into a human-readable string
+     * @param duration The duration to format
+     * @return Formatted string (e.g., "2d 5h 30m")
+     */
+    private String formatDuration(Duration duration) {
+        long days = duration.toDays();
+        long hours = duration.toHours() % 24;
+        long minutes = duration.toMinutes() % 60;
+        long seconds = duration.getSeconds() % 60;
+        
+        StringBuilder result = new StringBuilder();
+        if (days > 0) result.append(days).append("d ");
+        if (hours > 0) result.append(hours).append("h ");
+        if (minutes > 0) result.append(minutes).append("m ");
+        if (days == 0 && hours == 0 && minutes == 0) result.append(seconds).append("s");
+        
+        return result.toString().trim();
+    }
+    
     private void reloadPlugin() {
         persistServerStats(true);
         stopTabRefreshSchedulers();

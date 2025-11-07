@@ -6,3 +6,12 @@ status_set: "&aYour status has been set to: &r%s"
 status_cleared: "&aYour status has been cleared."
 invalid_status: "&cInvalid status option. Use /status <option>"
 saved_status_message: "&aYour saved status is set to: &r%s"
+
+# LibertyBans Mute Messages
+# Placeholders: %reason%, %duration%
+mute_title: "&c&lуᴏᴜ ᴀʀᴇ ᴍᴜᴛᴇᴅ!"
+mute_with_reason: "&7Reason: &f%reason%"
+mute_duration_temporary: "&7Duration: &e%duration%"
+mute_duration_permanent: "&7Duration: &4&lPERMANENT"
+mute_duration_expiring: "&7Duration: &eExpiring soon..."
+mute_fallback: "&cYou are currently muted and cannot send messages."
