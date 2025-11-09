@@ -17,8 +17,6 @@
 #   %tps_5m%           - 5-minute server TPS
 #   %tps_15m%          - 15-minute server TPS
 #   %performance%      - Underlined server performance label (Smooth/Stable/etc.)
-#   %total_blocks%     - Total blocks placed (short format)
-#   %total_blocks_broken% - Total blocks broken (short format)
 #   %total_deaths%     - Total deaths tracked (short format)
 #   %rotating_line%    - Current entry from the rotating-line section below
 # Use & for color codes. Leave a line as "" for blank lines.
@@ -35,7 +33,7 @@ header:
 
 footer:
   - "&7Your deaths: &c%deaths%"
-  - "&7Server totals: &b%total_blocks% &7placed &8| &c%total_blocks_broken% &7broken &8| &c%total_deaths% &7deaths"
+  - "&7Server totals: &c%total_deaths% &7deaths"
   - "&7Country: &b%countrycode%"
   - "&7Dimensions &8| &fOverworld: &a%overworld_players% &8| &cNether: &c%nether_players% &8| &dEnd: &d%end_players%"
   - "&fHave fun on the server!"
@@ -44,4 +42,4 @@ rotating-line:
   interval-ticks: 100
   entries:
     - "&aPerformance: %performance%"
-    - "&7Stats: &b%total_blocks% placed &8| &c%total_blocks_broken% broken"
+    - "&7Stats: &c%total_deaths% deaths tracked"

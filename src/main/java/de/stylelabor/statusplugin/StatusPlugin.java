@@ -12,6 +12,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.World;
+import org.bukkit.Statistic;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
@@ -19,17 +20,18 @@ import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
+import org.bukkit.event.Cancellable;
+import org.bukkit.event.Event;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
-import org.bukkit.event.block.BlockPlaceEvent;
-import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.plugin.EventExecutor;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.scoreboard.Scoreboard;
 import org.bukkit.scoreboard.Team;
 import org.jetbrains.annotations.NotNull;
@@ -37,20 +39,18 @@ import org.jetbrains.annotations.NotNull;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.Locale;
+import java.util.logging.Level;
 
-import space.arim.omnibus.Omnibus;
-import space.arim.omnibus.OmnibusProvider;
-import space.arim.libertybans.api.LibertyBans;
-import space.arim.libertybans.api.PunishmentType;
-import space.arim.libertybans.api.punish.Punishment;
-
-import java.time.Instant;
-import java.time.Duration;
+import java.net.InetAddress;
+import java.util.concurrent.CompletionStage;
 
 public final class StatusPlugin extends JavaPlugin implements Listener, TabCompleter {
 
@@ -71,10 +71,8 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     private String defaultLanguage;
     private boolean isDiscordSrvPresent;
     private boolean isLibertyBansPresent;
-    private LibertyBans libertyBans;
+    private LibertyBansIntegration libertyBansIntegration;
     private CountryLocationManager countryLocationManager;
-    private long totalBlocksPlaced;
-    private long totalBlocksBroken;
     private long totalTrackedDeaths;
     private boolean serverStatsDirty;
     private int statsAutosaveCounterTicks;
@@ -90,17 +88,20 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     private int cachedNetherPlayers;
     private int cachedEndPlayers;
     private String cachedPerformanceLabel = ChatColor.GREEN + "" + ChatColor.UNDERLINE + "Smooth" + ChatColor.RESET;
+    private String cachedMspt = PLACEHOLDER_NOT_AVAILABLE;
     private static final ThreadLocal<Boolean> relayingToDiscord = ThreadLocal.withInitial(() -> false);
     private static final DateTimeFormatter TABLIST_TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault());
     private static final String PLACEHOLDER_NOT_AVAILABLE = "N/A";
     private static final int STATS_AUTOSAVE_INTERVAL_TICKS = 6000;
+    private static final long STATS_SAVE_DELAY_TICKS = 200L;
     private Scoreboard sortingScoreboard;
     private final HashMap<String, Team> statusTeams = new HashMap<>();
-
+    private BukkitTask delayedStatsSaveTask;
     @Override
     public void onEnable() {
         // Plugin startup logic
         saveDefaultConfig();
+        updateConfigIfNeeded();
         loadConfig();
         loadLanguageConfig();
         loadPlayerStatusConfig(); // Load player status during plugin startup
@@ -109,6 +110,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         loadPlayerStatuses(); // Load the statuses of all players from player-status.yml
         loadPlayerDeaths(); // Load the death counts of all players from player-deaths.yml
         getServer().getPluginManager().registerEvents(this, this);
+        registerPaperAsyncChatListeners();
         Objects.requireNonNull(getCommand(commandName)).setTabCompleter(this);
         int pluginId = 20901;
         //noinspection unused
@@ -147,6 +149,13 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         }
 
         refreshDimensionCache();
+        
+        // Detect and log which TPS fetching method is available
+        detectTpsFetchingMethod();
+        
+        // Detect and log MiniMessage support
+        detectMiniMessageSupport();
+        
         startTabRefreshSchedulers();
         
         // Initialize scoreboard for tab list sorting (delayed to ensure server is ready)
@@ -171,17 +180,11 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             return;
         }
         playerDeathMap.clear();
-        long aggregatedDeaths = 0;
         for (String uuid : playerDeathsConfig.getKeys(false)) {
             int deaths = playerDeathsConfig.getInt(uuid, 0);
-            aggregatedDeaths += deaths;
             playerDeathMap.put(UUID.fromString(uuid), deaths);
         }
-        totalTrackedDeaths = aggregatedDeaths;
-        if (serverStatsConfig != null) {
-            serverStatsConfig.set("total-deaths", totalTrackedDeaths);
-            serverStatsDirty = true;
-        }
+        recalculateTotalTrackedDeathsFromMap();
     }
 
     @Override
@@ -203,7 +206,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
 
             if (getConfig().getBoolean("only-admin-change", false) && !player.hasPermission("statusplugin.admin")) {
                 String message = getConfig().getString("only-admin-change-message", "&cOnly admins can change statuses.");
-                player.sendMessage(ChatColor.translateAlternateColorCodes('&', message));
+                player.sendMessage(ColorParser.parse(message));
                 return true;
             }
 
@@ -221,7 +224,11 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
                     }
                     playerStatusMap.put(player.getUniqueId(), status);
                     String message = getLanguageText(player, "status_set", "&aYour status has been set to: &r%s");
-                    player.sendMessage(ChatColor.translateAlternateColorCodes('&', String.format(message, status)));
+                    player.sendMessage(ColorParser.parse(String.format(message, status)));
+                    player.sendMessage(ChatColor.GRAY + "Your status will show in chat when you send a message.");
+                    
+                    // Debug: Show what's in the map
+                    getLogger().info("Set status for " + player.getName() + ": " + status);
                     
                     // Assign player to team for sorting
                     assignPlayerToTeam(player);
@@ -232,12 +239,12 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
                     savePlayerStatusConfig();
                 } else {
                     String message = getLanguageText(player, "invalid_status", "&cInvalid status option. Use /status <option>");
-                    player.sendMessage(ChatColor.translateAlternateColorCodes('&', message));
+                    player.sendMessage(ColorParser.parse(message));
                 }
             } else {
                 playerStatusMap.remove(player.getUniqueId());
                 String message = getLanguageText(player, "status_cleared", "&aYour status has been cleared.");
-                player.sendMessage(ChatColor.translateAlternateColorCodes('&', message));
+                player.sendMessage(ColorParser.parse(message));
                 
                 // Assign player to team for sorting
                 assignPlayerToTeam(player);
@@ -257,7 +264,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             Player player = (Player) sender;
             playerStatusMap.remove(player.getUniqueId());
             String message = getLanguageText(player, "status_cleared", "&aYour status has been cleared.");
-            player.sendMessage(ChatColor.translateAlternateColorCodes('&', message));
+            player.sendMessage(ColorParser.parse(message));
             
             // Assign player to team for sorting
             assignPlayerToTeam(player);
@@ -373,9 +380,18 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
                     playerDeathsConfig.set(targetUuid.toString(), newDeaths);
                     savePlayerDeathsConfig();
                 }
+                adjustTotalTrackedDeaths((long) newDeaths - currentDeaths);
+                if (getConfig().getBoolean("tab-styling-enabled", true)) {
+                    updatePlayerTabList();
+                }
 
                 Player refreshedOnlineTarget = Bukkit.getPlayer(targetUuid);
                 if (refreshedOnlineTarget != null) {
+                    try {
+                        refreshedOnlineTarget.setStatistic(Statistic.DEATHS, newDeaths);
+                    } catch (IllegalArgumentException ex) {
+                        getLogger().log(Level.FINE, "Failed to set vanilla death statistic for " + refreshedOnlineTarget.getName(), ex);
+                    }
                     if (getConfig().getBoolean("tab-styling-enabled", true)) {
                         updatePlayerTabListName(refreshedOnlineTarget, TabEnvironmentSnapshot.capture(this), "");
                     }
@@ -425,7 +441,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
 
             playerStatusMap.put(targetPlayer.getUniqueId(), status);
             String message = getLanguageText(targetPlayer, "status_set", "&aYour status has been set to: &r%s");
-            targetPlayer.sendMessage(ChatColor.translateAlternateColorCodes('&', String.format(message, status)));
+            targetPlayer.sendMessage(ColorParser.parse(String.format(message, status)));
             
             // Assign player to team for sorting
             assignPlayerToTeam(targetPlayer);
@@ -433,7 +449,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
 
             playerStatusConfig.set(targetPlayer.getUniqueId().toString(), status);
             savePlayerStatusConfig();
-            sender.sendMessage(ChatColor.GREEN + "Status of " + targetPlayer.getName() + " has been set to: " + ChatColor.translateAlternateColorCodes('&', status));
+            sender.sendMessage(ChatColor.GREEN + "Status of " + targetPlayer.getName() + " has been set to: " + ColorParser.parse(status));
             return true;
         }
 
@@ -469,10 +485,12 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             });
         }
 
+        syncPlayerDeathsFromStatistic(player);
+
         // Send hardcoded admin join message if the player has the admin permission and the message is enabled
         if (player.hasPermission("statusplugin.admin") && getConfig().getBoolean("admin-join-message-enabled", false)) {
             String adminJoinMessage = "&aThank you for using this status plugin. When you want to support me, please download my plugin from Modrinth! https://modrinth.com/plugin/statusplugin-like-in-craftattack";
-            player.sendMessage(ChatColor.translateAlternateColorCodes('&', adminJoinMessage));
+            player.sendMessage(ColorParser.parse(adminJoinMessage));
         }
 
         // Check for the latest version and send message to admins or ops
@@ -498,76 +516,43 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             playerDeathsConfig.set(uuid.toString(), deaths);
             savePlayerDeathsConfig();
         }
-        totalTrackedDeaths++;
-        if (serverStatsConfig != null) {
-            serverStatsConfig.set("total-deaths", totalTrackedDeaths);
-            serverStatsDirty = true;
-        }
+        adjustTotalTrackedDeaths(1);
         if (getConfig().getBoolean("tab-styling-enabled", true)) {
-            updatePlayerTabListName(player, TabEnvironmentSnapshot.capture(this), "");
+            updatePlayerTabList();
         }
-    }
-
-    @EventHandler
-    public void onBlockPlace(BlockPlaceEvent event) {
-        if (event.isCancelled()) {
-            return;
-        }
-        totalBlocksPlaced++;
-        if (serverStatsConfig != null) {
-            serverStatsConfig.set("total-blocks-placed", totalBlocksPlaced);
-            serverStatsDirty = true;
-        }
-    }
-
-    @EventHandler
-    public void onBlockBreak(BlockBreakEvent event) {
-        if (event.isCancelled()) {
-            return;
-        }
-        totalBlocksBroken++;
-        if (serverStatsConfig != null) {
-            serverStatsConfig.set("total-blocks-broken", totalBlocksBroken);
-            serverStatsDirty = true;
-        }
+        Bukkit.getScheduler().runTask(this, () -> syncPlayerDeathsFromStatistic(player));
     }
 
     @EventHandler(priority = EventPriority.LOWEST)
     public void onPlayerChatMuteCheck(AsyncPlayerChatEvent event) {
-        // Check if player is muted by LibertyBans FIRST at LOWEST priority
-        // This ensures we catch mutes before any other processing
-        if (isLibertyBansPresent && libertyBans != null) {
-            Player player = event.getPlayer();
-            Punishment mutePunishment = getActiveMute(player);
-            
-            if (mutePunishment != null) {
-                // Player is muted - cancel the event immediately
-                event.setCancelled(true);
-                
-                // Send mute notification to the player
-                sendMuteNotification(player, mutePunishment);
-                return;
-            }
-        }
+        cancelIfMuted(event.getPlayer(), event);
     }
     
     @EventHandler(priority = EventPriority.HIGH)
     public void onPlayerChat(AsyncPlayerChatEvent event) {
+        handleChatMessage(event.getPlayer(), event.getMessage(), event);
+    }
+
+    private void handleChatMessage(Player player, String originalMessage, Cancellable cancellable) {
         if (Boolean.TRUE.equals(relayingToDiscord.get())) {
             return; // Skip formatting/broadcast when relaying to avoid duplicates
         }
-        
-        // If event is already cancelled (e.g., by mute check), don't process
-        if (event.isCancelled()) {
-            return;
+
+        if (cancellable.isCancelled()) {
+            return; // Respect prior cancellations (e.g., mute checks)
         }
-        
+
         if (!getConfig().getBoolean("chat-styling-enabled", true)) {
             return; // Skip chat styling if disabled
         }
 
-        Player player = event.getPlayer();
         String status = playerStatusMap.getOrDefault(player.getUniqueId(), "");
+
+        // Debug logging
+        if (!status.isEmpty()) {
+            getLogger().info("Chat from " + player.getName() + " with status: " + status);
+        }
+
         String adminStatusFormat = statusOptions.get("ADMIN");
         boolean usingAdminStatus = adminStatusFormat != null && adminStatusFormat.equals(status);
 
@@ -578,10 +563,12 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         } else {
             chatFormat = getConfig().getString("chat-format", "%status% <$$PLAYER$$> ");
             chatFormat = chatFormat.replace("%status%", status);
+            // Debug: Show the format being used
+            getLogger().info("Using chat format: " + chatFormat);
         }
-        
+
         // Replace country placeholders (only if country location is enabled)
-        if (getConfig().getBoolean("country-location-enabled", false) && 
+        if (getConfig().getBoolean("country-location-enabled", false) &&
             countryLocationManager != null) {
             CountryLocationManager.CountryData countryData = countryLocationManager.getPlayerCountry(player.getUniqueId());
             if (countryData != null) {
@@ -603,11 +590,11 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             playerName = ChatColor.RED + playerName + ChatColor.RESET;
         }
         chatFormat = chatFormat.replace("$$PLAYER$$", playerName);
-        chatFormat = ChatColor.translateAlternateColorCodes('&', chatFormat);
+        chatFormat = ColorParser.parse(chatFormat);
 
         // Create a TextComponent for the formatted message
         BaseComponent[] statusComponent = TextComponent.fromLegacyText(chatFormat);
-        String messageText = event.getMessage();
+        String messageText = originalMessage;
         if (usingAdminStatus) {
             messageText = ChatColor.RED + messageText + ChatColor.RESET;
         }
@@ -632,19 +619,142 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         }
 
         // Cancel the original chat event
-        event.setCancelled(true);
+        cancellable.setCancelled(true);
 
         // Relay to DiscordSRV by firing a synthetic chat event on the main thread with no recipients
-        if (isDiscordSrvPresent && getConfig().getBoolean("discordsrv-relay-enabled", true) && !Boolean.TRUE.equals(relayingToDiscord.get())) {
-            Bukkit.getScheduler().runTask(this, () -> {
-                try {
-                    relayingToDiscord.set(true);
-                    AsyncPlayerChatEvent forward = new AsyncPlayerChatEvent(false, player, event.getMessage(), new java.util.HashSet<>());
-                    Bukkit.getPluginManager().callEvent(forward);
-                } finally {
-                    relayingToDiscord.set(false);
+        relayChatToDiscord(player, originalMessage);
+    }
+
+    private boolean cancelIfMuted(Player player, Cancellable event) {
+        if (event.isCancelled()) {
+            return true;
+        }
+
+        if (isLibertyBansPresent && libertyBansIntegration != null) {
+            Optional<MuteInfo> muteInfo = libertyBansIntegration.getActiveMute(player);
+            if (muteInfo.isPresent()) {
+                event.setCancelled(true);
+
+                // Send mute notification to the player
+                sendMuteNotification(player, muteInfo.get());
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void relayChatToDiscord(Player player, String message) {
+        if (!isDiscordSrvPresent || !getConfig().getBoolean("discordsrv-relay-enabled", true) || Boolean.TRUE.equals(relayingToDiscord.get())) {
+            return;
+        }
+
+        Bukkit.getScheduler().runTask(this, () -> {
+            try {
+                relayingToDiscord.set(true);
+                AsyncPlayerChatEvent forward = new AsyncPlayerChatEvent(false, player, message, new java.util.HashSet<>());
+                Bukkit.getPluginManager().callEvent(forward);
+            } finally {
+                relayingToDiscord.set(false);
+            }
+        });
+    }
+
+    private String convertAdventureComponentToLegacy(Object adventureComponent) {
+        if (adventureComponent == null) {
+            return "";
+        }
+
+        try {
+            ClassLoader loader = adventureComponent.getClass().getClassLoader();
+            Class<?> componentClass = Class.forName("net.kyori.adventure.text.Component", true, loader);
+            if (componentClass.isInstance(adventureComponent)) {
+                Class<?> serializerClass = Class.forName("net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer", true, loader);
+                Method plainTextMethod = serializerClass.getMethod("plainText");
+                Object serializer = plainTextMethod.invoke(null);
+                Method serializeMethod = serializer.getClass().getMethod("serialize", componentClass);
+                Object plain = serializeMethod.invoke(serializer, adventureComponent);
+                if (plain instanceof String) {
+                    return (String) plain;
                 }
-            });
+            }
+        } catch (ClassNotFoundException | NoSuchMethodException ignored) {
+            // Plain serializer not available on this platform
+        } catch (IllegalAccessException | InvocationTargetException ex) {
+            getLogger().log(Level.FINE, "Failed to convert Adventure component using plain serializer", ex);
+        }
+
+        try {
+            Method contentMethod = adventureComponent.getClass().getMethod("content");
+            Object content = contentMethod.invoke(adventureComponent);
+            if (content instanceof String) {
+                return (String) content;
+            }
+        } catch (NoSuchMethodException ignored) {
+            // Not a TextComponentImpl - ignore
+        } catch (IllegalAccessException | InvocationTargetException ex) {
+            getLogger().log(Level.FINE, "Failed to access Adventure component content", ex);
+        }
+
+        String raw = adventureComponent.toString();
+        int contentIndex = raw.indexOf("content=\"");
+        if (contentIndex >= 0) {
+            int start = contentIndex + "content=\"".length();
+            int end = raw.indexOf('"', start);
+            if (end > start) {
+                return raw.substring(start, end);
+            }
+        }
+
+        return raw;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void registerPaperAsyncChatListeners() {
+        try {
+            final Class<?> asyncChatEventClass = Class.forName("io.papermc.paper.event.player.AsyncChatEvent");
+            final Method playerMethod = asyncChatEventClass.getMethod("getPlayer");
+            final Method messageMethod = asyncChatEventClass.getMethod("message");
+
+            EventExecutor muteExecutor = (listener, event) -> {
+                if (!asyncChatEventClass.isInstance(event)) {
+                    return;
+                }
+                if (!(event instanceof Cancellable)) {
+                    return;
+                }
+                try {
+                    Player player = (Player) playerMethod.invoke(event);
+                    cancelIfMuted(player, (Cancellable) event);
+                } catch (IllegalAccessException | InvocationTargetException reflectionException) {
+                    getLogger().log(Level.SEVERE, "Failed to handle Paper AsyncChatEvent mute check", reflectionException);
+                }
+            };
+
+            EventExecutor chatExecutor = (listener, event) -> {
+                if (!asyncChatEventClass.isInstance(event)) {
+                    return;
+                }
+                if (!(event instanceof Cancellable)) {
+                    return;
+                }
+                try {
+                    Player player = (Player) playerMethod.invoke(event);
+                    Object component = messageMethod.invoke(event);
+                    String message = convertAdventureComponentToLegacy(component);
+                    handleChatMessage(player, message, (Cancellable) event);
+                } catch (IllegalAccessException | InvocationTargetException reflectionException) {
+                    getLogger().log(Level.SEVERE, "Failed to handle Paper AsyncChatEvent formatting", reflectionException);
+                }
+            };
+
+            Bukkit.getPluginManager().registerEvent((Class<? extends Event>) asyncChatEventClass, this, EventPriority.LOWEST, muteExecutor, this, false);
+            Bukkit.getPluginManager().registerEvent((Class<? extends Event>) asyncChatEventClass, this, EventPriority.HIGH, chatExecutor, this, false);
+            getLogger().info("Paper AsyncChatEvent detected. Modern chat pipeline support enabled.");
+        } catch (ClassNotFoundException ignored) {
+            // Server is not running Paper or does not expose the modern async chat event
+        } catch (Exception ex) {
+            getLogger().log(Level.SEVERE, "Failed to register Paper AsyncChatEvent listeners", ex);
         }
     }
 
@@ -729,6 +839,95 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         }
 
         return completions;
+    }
+
+    /**
+     * Update config.yml if it's from an older version
+     * Adds missing keys from the default config while preserving existing values
+     * ONLY adds new keys - NEVER overwrites existing settings
+     */
+    private void updateConfigIfNeeded() {
+        FileConfiguration config = getConfig();
+        
+        // Get current config version (defaults to 1 if not present)
+        int currentConfigVersion = config.getInt("config-version", 1);
+        
+        // Expected config version for this plugin version
+        int expectedConfigVersion = 6;
+        
+        // Check if update is needed
+        if (currentConfigVersion >= expectedConfigVersion) {
+            // Config is up to date
+            return;
+        }
+        
+        getLogger().info("========================================");
+        getLogger().info("[StatusPlugin] Detected config from older version!");
+        getLogger().info("[StatusPlugin] Current config version: " + currentConfigVersion);
+        getLogger().info("[StatusPlugin] Expected config version: " + expectedConfigVersion);
+        getLogger().info("[StatusPlugin] Updating config with new options...");
+        getLogger().info("[StatusPlugin] IMPORTANT: Only adding NEW keys, preserving ALL existing settings!");
+        
+        // Create backup of old config
+        File configFile = new File(getDataFolder(), "config.yml");
+        File backupFile = new File(getDataFolder(), "config.yml.backup-v" + currentConfigVersion);
+        try {
+            if (configFile.exists()) {
+                java.nio.file.Files.copy(
+                    configFile.toPath(),
+                    backupFile.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                );
+                getLogger().info("[StatusPlugin] Created backup: " + backupFile.getName());
+            }
+        } catch (IOException e) {
+            getLogger().warning("[StatusPlugin] Failed to create config backup: " + e.getMessage());
+        }
+        
+        // Load default config from resources
+        FileConfiguration defaultConfig = YamlConfiguration.loadConfiguration(
+            new java.io.InputStreamReader(
+                getResource("config.yml"),
+                java.nio.charset.StandardCharsets.UTF_8
+            )
+        );
+        
+        // Track what's been added
+        int addedKeys = 0;
+        int skippedKeys = 0;
+        
+        // Add missing keys from default config (ONLY if they don't exist)
+        for (String key : defaultConfig.getKeys(true)) {
+            // Skip if this is a ConfigurationSection (parent node)
+            Object value = defaultConfig.get(key);
+            if (value instanceof ConfigurationSection) {
+                continue; // Skip section nodes, only process leaf values
+            }
+            
+            if (!config.contains(key)) {
+                // Key doesn't exist - ADD IT
+                config.set(key, defaultConfig.get(key));
+                addedKeys++;
+                getLogger().info("[StatusPlugin] + Added: " + key);
+            } else {
+                // Key exists - SKIP IT (preserve user's setting)
+                skippedKeys++;
+            }
+        }
+        
+        // Update version numbers (these are always safe to update)
+        config.set("config-version", expectedConfigVersion);
+        config.set("plugin-version", getDescription().getVersion());
+        
+        // Save updated config
+        saveConfig();
+        
+        getLogger().info("[StatusPlugin] ✓ Config update complete!");
+        getLogger().info("[StatusPlugin] ✓ Added " + addedKeys + " NEW config options");
+        getLogger().info("[StatusPlugin] ✓ Preserved " + skippedKeys + " EXISTING settings (not touched)");
+        getLogger().info("[StatusPlugin] ✓ Your tab list formats, statuses, and all settings are safe!");
+        getLogger().info("[StatusPlugin] Backup saved as: " + backupFile.getName());
+        getLogger().info("========================================");
     }
 
     private void loadConfig() {
@@ -873,8 +1072,6 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         }
 
         serverStatsConfig = YamlConfiguration.loadConfiguration(serverStatsFile);
-        totalBlocksPlaced = serverStatsConfig.getLong("total-blocks-placed", 0L);
-        totalBlocksBroken = serverStatsConfig.getLong("total-blocks-broken", 0L);
         long storedTotalDeaths = serverStatsConfig.getLong("total-deaths", -1L);
         if (storedTotalDeaths >= 0) {
             totalTrackedDeaths = storedTotalDeaths;
@@ -906,8 +1103,6 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             return;
         }
         File serverStatsFile = new File(getDataFolder(), "server-stats.yml");
-        serverStatsConfig.set("total-blocks-placed", totalBlocksPlaced);
-        serverStatsConfig.set("total-blocks-broken", totalBlocksBroken);
         serverStatsConfig.set("total-deaths", totalTrackedDeaths);
         try {
             serverStatsConfig.save(serverStatsFile);
@@ -919,6 +1114,10 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     private void persistServerStats(boolean force) {
         if (serverStatsConfig == null) {
             return;
+        }
+
+        if (force) {
+            cancelDelayedStatsSave();
         }
 
         if (!serverStatsDirty && !force) {
@@ -935,6 +1134,92 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         statsAutosaveCounterTicks = 0;
         serverStatsDirty = false;
         saveServerStatsConfig();
+    }
+
+    private void markServerStatsDirty() {
+        if (serverStatsConfig == null) {
+            return;
+        }
+        serverStatsDirty = true;
+        scheduleStatsSave();
+    }
+
+    private void scheduleStatsSave() {
+        if (delayedStatsSaveTask != null) {
+            return;
+        }
+        delayedStatsSaveTask = Bukkit.getScheduler().runTaskLater(this, () -> {
+            delayedStatsSaveTask = null;
+            persistServerStats(true);
+        }, STATS_SAVE_DELAY_TICKS);
+    }
+
+    private void cancelDelayedStatsSave() {
+        if (delayedStatsSaveTask != null) {
+            delayedStatsSaveTask.cancel();
+            delayedStatsSaveTask = null;
+        }
+    }
+
+    private void adjustTotalTrackedDeaths(long delta) {
+        if (delta == 0L) {
+            return;
+        }
+        long recalculated = totalTrackedDeaths + delta;
+        if (recalculated < 0L) {
+            recalculateTotalTrackedDeathsFromMap();
+            return;
+        }
+        totalTrackedDeaths = recalculated;
+        if (serverStatsConfig != null) {
+            serverStatsConfig.set("total-deaths", totalTrackedDeaths);
+            markServerStatsDirty();
+        }
+    }
+
+    private void recalculateTotalTrackedDeathsFromMap() {
+        long total = 0L;
+        for (int deaths : playerDeathMap.values()) {
+            total += deaths;
+        }
+        totalTrackedDeaths = Math.max(0L, total);
+        if (serverStatsConfig != null) {
+            serverStatsConfig.set("total-deaths", totalTrackedDeaths);
+            markServerStatsDirty();
+        }
+    }
+
+    private void syncPlayerDeathsFromStatistic(Player player) {
+        if (player == null) {
+            return;
+        }
+        try {
+            int vanillaDeaths = player.getStatistic(Statistic.DEATHS);
+            UUID uuid = player.getUniqueId();
+            int storedDeaths = playerDeathMap.getOrDefault(uuid, 0);
+            if (vanillaDeaths == storedDeaths) {
+                return;
+            }
+
+            boolean statisticUpdated = false;
+            try {
+                player.setStatistic(Statistic.DEATHS, storedDeaths);
+                statisticUpdated = true;
+            } catch (IllegalArgumentException ignored) {
+                // Some server versions may not allow setting this statistic
+            }
+
+            if (!statisticUpdated) {
+                playerDeathMap.put(uuid, vanillaDeaths);
+                if (playerDeathsConfig != null) {
+                    playerDeathsConfig.set(uuid.toString(), vanillaDeaths);
+                    savePlayerDeathsConfig();
+                }
+                adjustTotalTrackedDeaths((long) vanillaDeaths - storedDeaths);
+            }
+        } catch (NoSuchFieldError ignored) {
+            // Statistic not available on this server version
+        }
     }
 
     private String getLanguageText(Player player, String key, String defaultText) {
@@ -1138,6 +1423,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     }
 
     private void stopTabRefreshSchedulers() {
+        cancelDelayedStatsSave();
         if (fastTabRefreshTask != null) {
             fastTabRefreshTask.cancel();
             fastTabRefreshTask = null;
@@ -1161,6 +1447,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
 
         double[] tpsValues = fetchRecentTps();
         cachedPerformanceLabel = computePerformanceLabel(tpsValues);
+        cachedMspt = fetchMspt();
 
         if (!tabListRotatingLines.isEmpty()) {
             rotatingLineElapsedTicks += tabRefreshIntervalTicks;
@@ -1210,21 +1497,12 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         }
         return cachedPerformanceLabel;
     }
-
-    public long getTotalBlocksPlaced() {
-        return totalBlocksPlaced;
-    }
-
-    public String getFormattedTotalBlocksPlaced() {
-        return formatLargeNumber(totalBlocksPlaced);
-    }
-
-    public long getTotalBlocksBroken() {
-        return totalBlocksBroken;
-    }
-
-    public String getFormattedTotalBlocksBroken() {
-        return formatLargeNumber(totalBlocksBroken);
+    
+    public String getMspt() {
+        if (fastTabRefreshTask == null) {
+            cachedMspt = fetchMspt();
+        }
+        return cachedMspt;
     }
 
     public long getTotalTrackedDeaths() {
@@ -1254,7 +1532,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
                     ? getConfig().getString("tab-list-format-no-status", "&7[&e%countrycode%&7] &r$$PLAYER$$")
                     : tabListFormat;
             String tabListName = formatTabListText(template, player, status, coloredPlayerName, countryData, snapshot);
-            tabListName = ChatColor.translateAlternateColorCodes('&', tabListName);
+            tabListName = ColorParser.parse(tabListName);
             
             // Add invisible sorting prefix to force tab list order
             tabListName = invisibleSortPrefix + tabListName;
@@ -1302,8 +1580,8 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             footer = formatTabListSection(tabListFooterLines, player, status, coloredPlayerName, countryData, snapshot);
         }
 
-        header = ChatColor.translateAlternateColorCodes('&', header);
-        footer = ChatColor.translateAlternateColorCodes('&', footer);
+        header = ColorParser.parse(header);
+        footer = ColorParser.parse(footer);
 
         if (isTabPluginPresent) {
             TabPlayer tabPlayer = TabAPI.getInstance().getPlayer(player.getUniqueId());
@@ -1363,12 +1641,9 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
                 .replace("%tps_1m%", snapshot.tps1m)
                 .replace("%tps_5m%", snapshot.tps5m)
                 .replace("%tps_15m%", snapshot.tps15m)
+                .replace("%mspt%", snapshot.mspt)
                 .replace("%performance%", snapshot.performanceLabel)
                 .replace("%performance_label%", snapshot.performanceLabel)
-                .replace("%total_blocks%", snapshot.totalBlocksShort)
-                .replace("%total_blocks_raw%", String.valueOf(snapshot.totalBlocksRaw))
-                .replace("%total_blocks_broken%", snapshot.totalBlocksBrokenShort)
-                .replace("%total_blocks_broken_raw%", String.valueOf(snapshot.totalBlocksBrokenRaw))
                 .replace("%total_deaths%", snapshot.totalDeathsShort)
                 .replace("%total_deaths_raw%", String.valueOf(snapshot.totalDeathsRaw));
 
@@ -1398,7 +1673,106 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         return total;
     }
 
+    /**
+     * Detect and log MiniMessage support for status formatting
+     */
+    private void detectMiniMessageSupport() {
+        getLogger().info("========================================");
+        getLogger().info("[StatusPlugin] MiniMessage support DISABLED.");
+        getLogger().info("[StatusPlugin] Using legacy & color codes only for all formats.");
+        getLogger().info("[StatusPlugin] Update your status-options.yml to remove MiniMessage tags if present.");
+        getLogger().info("========================================");
+    }
+    
+    /**
+     * Detect and log which TPS/MSPT fetching methods are available
+     */
+    private void detectTpsFetchingMethod() {
+        boolean hasPaperTps = false;
+        boolean hasPaperMspt = false;
+        
+        // Try Paper API first
+        try {
+            Method getTpsMethod = Bukkit.class.getMethod("getTPS");
+            double[] tps = (double[]) getTpsMethod.invoke(null);
+            if (tps != null && tps.length >= 3) {
+                hasPaperTps = true;
+            }
+        } catch (NoSuchMethodException e) {
+            // Not Paper
+        } catch (Exception e) {
+            getLogger().warning("Paper getTPS() available but failed: " + e.getMessage());
+        }
+        
+        // Check for MSPT support (Paper only)
+        try {
+            Method getAverageMsptMethod = Bukkit.class.getMethod("getAverageTickTime");
+            Double mspt = (Double) getAverageMsptMethod.invoke(null);
+            if (mspt != null) {
+                hasPaperMspt = true;
+            }
+        } catch (NoSuchMethodException e) {
+            // Not available
+        } catch (Exception e) {
+            getLogger().warning("Paper getAverageTickTime() available but failed: " + e.getMessage());
+        }
+        
+        if (hasPaperTps || hasPaperMspt) {
+            getLogger().info("========================================");
+            getLogger().info("[StatusPlugin] Paper API DETECTED!");
+            if (hasPaperTps) {
+                getLogger().info("[StatusPlugin] ✓ TPS: Using Paper's native getTPS() method");
+            }
+            if (hasPaperMspt) {
+                getLogger().info("[StatusPlugin] ✓ MSPT: Using Paper's native getAverageTickTime() method");
+            }
+            getLogger().info("[StatusPlugin] All performance metrics fully supported");
+            getLogger().info("========================================");
+            return;
+        }
+        
+        // Try Spigot reflection method for TPS
+        try {
+            Method method = Bukkit.getServer().getClass().getMethod("getServer");
+            Object dedicatedServer = method.invoke(Bukkit.getServer());
+            Field recentTpsField = dedicatedServer.getClass().getField("recentTps");
+            recentTpsField.setAccessible(true);
+            double[] values = (double[]) recentTpsField.get(dedicatedServer);
+            if (values != null) {
+                getLogger().info("========================================");
+                getLogger().info("[StatusPlugin] Spigot TPS detection active");
+                getLogger().info("[StatusPlugin] ✓ TPS: Using reflection method");
+                getLogger().info("[StatusPlugin] ⚠ MSPT: Not available (Paper-only feature)");
+                getLogger().info("[StatusPlugin] TPS metrics available, MSPT will show N/A");
+                getLogger().info("========================================");
+                return;
+            }
+        } catch (ReflectiveOperationException | ClassCastException e) {
+            // Failed
+        }
+        
+        getLogger().warning("========================================");
+        getLogger().warning("[StatusPlugin] WARNING: Could not detect TPS!");
+        getLogger().warning("[StatusPlugin] TPS, MSPT and performance metrics will show as UNKNOWN");
+        getLogger().warning("[StatusPlugin] This may indicate an incompatible server version");
+        getLogger().warning("========================================");
+    }
+
     private double[] fetchRecentTps() {
+        // Try Paper API first (proper way to get TPS on Paper)
+        try {
+            Method getTpsMethod = Bukkit.class.getMethod("getTPS");
+            double[] tps = (double[]) getTpsMethod.invoke(null);
+            if (tps != null && tps.length >= 3) {
+                return tps.clone();
+            }
+        } catch (NoSuchMethodException e) {
+            // Not Paper, try Spigot reflection method below
+        } catch (Exception e) {
+            // Silent failure, already logged during detection
+        }
+        
+        // Fallback to Spigot reflection method for pure Spigot servers
         try {
             Method method = Bukkit.getServer().getClass().getMethod("getServer");
             Object dedicatedServer = method.invoke(Bukkit.getServer());
@@ -1407,8 +1781,28 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             double[] values = (double[]) recentTpsField.get(dedicatedServer);
             return values != null ? values.clone() : null;
         } catch (ReflectiveOperationException | ClassCastException e) {
+            // Silent failure, already logged during detection
             return null;
         }
+    }
+    
+    /**
+     * Fetch MSPT (milliseconds per tick) - Paper only feature
+     * @return Formatted MSPT string or N/A if not available
+     */
+    private String fetchMspt() {
+        try {
+            Method getAverageMsptMethod = Bukkit.class.getMethod("getAverageTickTime");
+            Double mspt = (Double) getAverageMsptMethod.invoke(null);
+            if (mspt != null && mspt >= 0) {
+                return String.format(Locale.US, "%.2f", mspt);
+            }
+        } catch (NoSuchMethodException e) {
+            // Not Paper - MSPT not available
+        } catch (Exception e) {
+            // Silent failure
+        }
+        return PLACEHOLDER_NOT_AVAILABLE;
     }
 
     private String getCurrentServerTime() {
@@ -1460,11 +1854,8 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         private final String tps1m;
         private final String tps5m;
         private final String tps15m;
+        private final String mspt;
         private final String performanceLabel;
-        private final long totalBlocksRaw;
-        private final String totalBlocksShort;
-        private final long totalBlocksBrokenRaw;
-        private final String totalBlocksBrokenShort;
         private final long totalDeathsRaw;
         private final String totalDeathsShort;
 
@@ -1479,11 +1870,8 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
                                        String tps1m,
                                        String tps5m,
                                        String tps15m,
+                                       String mspt,
                                        String performanceLabel,
-                                       long totalBlocksRaw,
-                                       String totalBlocksShort,
-                                       long totalBlocksBrokenRaw,
-                                       String totalBlocksBrokenShort,
                                        long totalDeathsRaw,
                                        String totalDeathsShort) {
             this.tabStylingEnabled = tabStylingEnabled;
@@ -1497,11 +1885,8 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             this.tps1m = tps1m;
             this.tps5m = tps5m;
             this.tps15m = tps15m;
+            this.mspt = mspt;
             this.performanceLabel = performanceLabel;
-            this.totalBlocksRaw = totalBlocksRaw;
-            this.totalBlocksShort = totalBlocksShort;
-            this.totalBlocksBrokenRaw = totalBlocksBrokenRaw;
-            this.totalBlocksBrokenShort = totalBlocksBrokenShort;
             this.totalDeathsRaw = totalDeathsRaw;
             this.totalDeathsShort = totalDeathsShort;
         }
@@ -1527,11 +1912,8 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
                     formatTpsValue(resolvedTps, 0),
                     formatTpsValue(resolvedTps, 1),
                     formatTpsValue(resolvedTps, 2),
+                    plugin.cachedMspt,
                     plugin.cachedPerformanceLabel,
-                    plugin.totalBlocksPlaced,
-                    plugin.formatLargeNumber(plugin.totalBlocksPlaced),
-                    plugin.totalBlocksBroken,
-                    plugin.formatLargeNumber(plugin.totalBlocksBroken),
                     plugin.totalTrackedDeaths,
                     plugin.formatLargeNumber(plugin.totalTrackedDeaths)
             );
@@ -1558,67 +1940,34 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
      * Initialize LibertyBans integration after all plugins have loaded
      */
     private void initializeLibertyBans() {
-        // Check for LibertyBans plugin
         org.bukkit.plugin.Plugin libertyBansPlugin = Bukkit.getPluginManager().getPlugin("LibertyBans");
-        
-        if (libertyBansPlugin != null && libertyBansPlugin.isEnabled()) {
-            isLibertyBansPresent = true;
-            
-            try {
-                Omnibus omnibus = OmnibusProvider.getOmnibus();
-                
-                if (omnibus != null) {
-                    libertyBans = omnibus.getRegistry().getProvider(LibertyBans.class).orElse(null);
-                    
-                    if (libertyBans != null) {
-                        getLogger().info("========================================");
-                        getLogger().info("[StatusPlugin] LibertyBans DETECTED!");
-                        getLogger().info("[StatusPlugin] Mute checking is now ACTIVE");
-                        getLogger().info("[StatusPlugin] Muted players will be blocked from chat");
-                        getLogger().info("========================================");
-                    } else {
-                        getLogger().warning("[StatusPlugin] LibertyBans is installed but API could not be initialized.");
-                        isLibertyBansPresent = false;
-                    }
-                } else {
-                    getLogger().warning("[StatusPlugin] Could not get Omnibus - LibertyBans API unavailable");
-                    isLibertyBansPresent = false;
-                }
-            } catch (Exception e) {
-                getLogger().severe("[StatusPlugin] Failed to initialize LibertyBans API: " + e.getMessage());
-                e.printStackTrace();
-                isLibertyBansPresent = false;
-            }
-        } else {
+        libertyBansIntegration = null;
+
+        if (libertyBansPlugin == null || !libertyBansPlugin.isEnabled()) {
             isLibertyBansPresent = false;
+            return;
         }
-    }
-    
-    /**
-     * Get the active mute punishment for a player from LibertyBans
-     * This checks for both UUID-based and IP-based mutes
-     * @param player The player to check
-     * @return The active Punishment if the player is muted, null otherwise
-     */
-    private Punishment getActiveMute(Player player) {
-        if (libertyBans == null) {
-            return null;
-        }
-        
+
         try {
-            // Use selectionByApplicabilityBuilder to check for both UUID and IP mutes
-            // This is the recommended approach according to LibertyBans API documentation
-            return libertyBans.getSelector()
-                    .selectionByApplicabilityBuilder(player.getUniqueId(), player.getAddress().getAddress())
-                    .type(PunishmentType.MUTE)
-                    .build()
-                    .getFirstSpecificPunishment()
-                    .thenApply(optional -> optional.orElse(null))
-                    .toCompletableFuture()
-                    .join(); // Block until we get the result
+            libertyBansIntegration = LibertyBansIntegration.tryCreate(this);
+            if (libertyBansIntegration != null) {
+                isLibertyBansPresent = true;
+                getLogger().info("========================================");
+                getLogger().info("[StatusPlugin] LibertyBans DETECTED!");
+                getLogger().info("[StatusPlugin] Mute checking is now ACTIVE");
+                getLogger().info("[StatusPlugin] Muted players will be blocked from chat");
+                getLogger().info("========================================");
+            } else {
+                isLibertyBansPresent = false;
+                getLogger().warning("[StatusPlugin] LibertyBans is installed but API could not be initialized.");
+            }
         } catch (Exception e) {
-            getLogger().warning("[StatusPlugin] Error checking mute status for player " + player.getName() + ": " + e.getMessage());
-            return null;
+            isLibertyBansPresent = false;
+            getLogger().log(Level.SEVERE, "[StatusPlugin] Failed to initialize LibertyBans API: " + e.getMessage(), e);
+        }
+
+        if (!isLibertyBansPresent) {
+            libertyBansIntegration = null;
         }
     }
     
@@ -1627,7 +1976,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
      * @param player The muted player
      * @param punishment The mute punishment details
      */
-    private void sendMuteNotification(Player player, Punishment punishment) {
+    private void sendMuteNotification(Player player, MuteInfo muteInfo) {
         try {
             // Get messages from language config
             String muteTitle = getLanguageText(player, "mute_title", "&c&lYOU ARE MUTED!");
@@ -1637,20 +1986,20 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             String muteDurationExpiring = getLanguageText(player, "mute_duration_expiring", "&7Duration: &eExpiring soon...");
             
             StringBuilder message = new StringBuilder();
-            message.append(ChatColor.translateAlternateColorCodes('&', muteTitle)).append("\n");
+            message.append(ColorParser.parse(muteTitle)).append("\n");
             
             // Add reason
-            String reason = punishment.getReason();
+            String reason = muteInfo.getReason();
             if (reason != null && !reason.isEmpty()) {
                 String reasonLine = muteWithReason.replace("%reason%", reason);
-                message.append(ChatColor.translateAlternateColorCodes('&', reasonLine)).append("\n");
+                message.append(ColorParser.parse(reasonLine)).append("\n");
             }
             
             // Add duration - check for permanent mute (null end date or > 5 years)
-            Instant end = punishment.getEndDate();
+            Instant end = muteInfo.getEnd();
             if (end == null) {
                 // Permanent mute - null end date means permanent
-                message.append(ChatColor.translateAlternateColorCodes('&', muteDurationPermanent));
+                message.append(ColorParser.parse(muteDurationPermanent));
             } else {
                 // Temporary mute - show remaining time
                 Duration remaining = Duration.between(Instant.now(), end);
@@ -1658,12 +2007,12 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
                 // If mute is longer than 5 years, treat it as permanent
                 long fiveYearsInDays = 365L * 5L;
                 if (remaining.toDays() > fiveYearsInDays) {
-                    message.append(ChatColor.translateAlternateColorCodes('&', muteDurationPermanent));
+                    message.append(ColorParser.parse(muteDurationPermanent));
                 } else if (remaining.isNegative() || remaining.isZero()) {
-                    message.append(ChatColor.translateAlternateColorCodes('&', muteDurationExpiring));
+                    message.append(ColorParser.parse(muteDurationExpiring));
                 } else {
                     String durationLine = muteDurationTemporary.replace("%duration%", formatDuration(remaining));
-                    message.append(ChatColor.translateAlternateColorCodes('&', durationLine));
+                    message.append(ColorParser.parse(durationLine));
                 }
             }
             
@@ -1671,7 +2020,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         } catch (Exception e) {
             // Fallback message if something goes wrong
             String fallback = getLanguageText(player, "mute_fallback", "&cYou are currently muted and cannot send messages.");
-            player.sendMessage(ChatColor.translateAlternateColorCodes('&', fallback));
+            player.sendMessage(ColorParser.parse(fallback));
             getLogger().warning("[StatusPlugin] Error sending mute notification: " + e.getMessage());
         }
     }
@@ -1696,10 +2045,171 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         return result.toString().trim();
     }
     
+    private static final class MuteInfo {
+        private final String reason;
+        private final Instant end;
+
+        private MuteInfo(String reason, Instant end) {
+            this.reason = reason;
+            this.end = end;
+        }
+
+        private String getReason() {
+            return reason;
+        }
+
+        private Instant getEnd() {
+            return end;
+        }
+    }
+
+    private static final class LibertyBansIntegration {
+        private final StatusPlugin plugin;
+        private final Object libertyBansApi;
+        private final Object mutePunishmentType;
+        private final Method getSelectorMethod;
+        private final Method getReasonMethod;
+        private final Method getEndDateMethod;
+        private final Class<?> punishmentTypeClass;
+        private boolean loggedError;
+
+        private LibertyBansIntegration(StatusPlugin plugin,
+                                       Object libertyBansApi,
+                                       Object mutePunishmentType,
+                                       Method getSelectorMethod,
+                                       Method getReasonMethod,
+                                       Method getEndDateMethod,
+                                       Class<?> punishmentTypeClass) {
+            this.plugin = plugin;
+            this.libertyBansApi = libertyBansApi;
+            this.mutePunishmentType = mutePunishmentType;
+            this.getSelectorMethod = getSelectorMethod;
+            this.getReasonMethod = getReasonMethod;
+            this.getEndDateMethod = getEndDateMethod;
+            this.punishmentTypeClass = punishmentTypeClass;
+        }
+
+        private static LibertyBansIntegration tryCreate(StatusPlugin plugin) throws Exception {
+            Class<?> omnibusProviderClass = Class.forName("space.arim.omnibus.OmnibusProvider");
+            Method getOmnibusMethod = omnibusProviderClass.getMethod("getOmnibus");
+            Object omnibus = getOmnibusMethod.invoke(null);
+            if (omnibus == null) {
+                return null;
+            }
+
+            Method getRegistryMethod = omnibus.getClass().getMethod("getRegistry");
+            Object registry = getRegistryMethod.invoke(omnibus);
+            if (registry == null) {
+                return null;
+            }
+
+            Class<?> libertyBansClass = Class.forName("space.arim.libertybans.api.LibertyBans");
+            Method getProviderMethod = registry.getClass().getMethod("getProvider", Class.class);
+            Optional<?> libertyBansOptional = (Optional<?>) getProviderMethod.invoke(registry, libertyBansClass);
+            Object libertyBansApi = libertyBansOptional.orElse(null);
+            if (libertyBansApi == null) {
+                return null;
+            }
+
+            Method getSelectorMethod = libertyBansClass.getMethod("getSelector");
+            Class<?> punishmentTypeClass = Class.forName("space.arim.libertybans.api.PunishmentType");
+            Method valueOfMethod = punishmentTypeClass.getMethod("valueOf", String.class);
+            Object muteType = valueOfMethod.invoke(null, "MUTE");
+            Class<?> punishmentClass = Class.forName("space.arim.libertybans.api.punish.Punishment");
+            Method getReasonMethod = punishmentClass.getMethod("getReason");
+            Method getEndDateMethod = punishmentClass.getMethod("getEndDate");
+
+            return new LibertyBansIntegration(
+                    plugin,
+                    libertyBansApi,
+                    muteType,
+                    getSelectorMethod,
+                    getReasonMethod,
+                    getEndDateMethod,
+                    punishmentTypeClass
+            );
+        }
+
+        private Optional<MuteInfo> getActiveMute(Player player) {
+            if (player == null) {
+                return Optional.empty();
+            }
+            try {
+                Object selector = getSelectorMethod.invoke(libertyBansApi);
+                if (selector == null) {
+                    return Optional.empty();
+                }
+
+                InetAddress inetAddress = player.getAddress() != null ? player.getAddress().getAddress() : null;
+                if (inetAddress == null) {
+                    return Optional.empty();
+                }
+
+                Method builderMethod = selector.getClass().getMethod("selectionByApplicabilityBuilder", UUID.class, InetAddress.class);
+                Object builder = builderMethod.invoke(selector, player.getUniqueId(), inetAddress);
+                if (builder == null) {
+                    return Optional.empty();
+                }
+
+                Method typeMethod = builder.getClass().getMethod("type", punishmentTypeClass);
+                typeMethod.invoke(builder, mutePunishmentType);
+
+                Method buildMethod = builder.getClass().getMethod("build");
+                Object selection = buildMethod.invoke(builder);
+                if (selection == null) {
+                    return Optional.empty();
+                }
+
+                Method firstSpecificMethod = selection.getClass().getMethod("getFirstSpecificPunishment");
+                Object stageObj = firstSpecificMethod.invoke(selection);
+                if (!(stageObj instanceof CompletionStage)) {
+                    return Optional.empty();
+                }
+
+                @SuppressWarnings("unchecked")
+                CompletionStage<Optional<?>> stage = (CompletionStage<Optional<?>>) stageObj;
+                Optional<?> optional = stage.toCompletableFuture().join();
+                if (optional == null || !optional.isPresent()) {
+                    return Optional.empty();
+                }
+
+                Object punishment = optional.get();
+                String reason = null;
+                try {
+                    Object reasonObj = getReasonMethod.invoke(punishment);
+                    if (reasonObj instanceof String) {
+                        reason = (String) reasonObj;
+                    }
+                } catch (Exception ignored) {
+                    // Ignored - reason remains null
+                }
+
+                Instant end = null;
+                try {
+                    Object endObj = getEndDateMethod.invoke(punishment);
+                    if (endObj instanceof Instant) {
+                        end = (Instant) endObj;
+                    }
+                } catch (Exception ignored) {
+                    // Ignored - end remains null
+                }
+
+                return Optional.of(new MuteInfo(reason, end));
+            } catch (Exception ex) {
+                if (!loggedError) {
+                    loggedError = true;
+                    plugin.getLogger().log(Level.WARNING, "[StatusPlugin] Error checking LibertyBans mute status: " + ex.getMessage(), ex);
+                }
+                return Optional.empty();
+            }
+        }
+    }
+
     private void reloadPlugin() {
         persistServerStats(true);
         stopTabRefreshSchedulers();
         reloadConfig();
+        updateConfigIfNeeded();
         loadConfig();
         loadLanguageConfig();
         loadPlayerStatusConfig();

@@ -4,7 +4,7 @@
   <groupId>de.stylelabor</groupId>
   <artifactId>StatusPlugin</artifactId>
   <name>StatusPlugin</name>
-  <version>1</version>
+  <version>6.0.0</version>
   <build>
     <resources>
       <resource>
@@ -37,6 +37,10 @@
             <relocation>
               <pattern>org.bstats</pattern>
               <shadedPattern>de.stylelabor</shadedPattern>
+            </relocation>
+            <relocation>
+              <pattern>net.kyori</pattern>
+              <shadedPattern>de.stylelabor.lib.kyori</shadedPattern>
             </relocation>
           </relocations>
         </configuration>

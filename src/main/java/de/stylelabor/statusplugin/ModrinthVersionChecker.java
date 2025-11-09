@@ -39,10 +39,23 @@ public class ModrinthVersionChecker {
             // Load the current version from config.yml
             File configFile = new File(Objects.requireNonNull(Bukkit.getPluginManager().getPlugin("StatusPlugin")).getDataFolder(), "config.yml");
             FileConfiguration config = YamlConfiguration.loadConfiguration(configFile);
-            String currentVersion = config.getString("current_version");
+            // Try new key first, then fallback to old key
+            String currentVersion = config.getString("plugin-version", config.getString("current_version", "5.9.1"));
+            
+            // Safety check for null
+            if (currentVersion == null) {
+                currentVersion = "5.9.1";
+            }
 
             // Compare versions
             String newestVersionNumber = newestVersion.getString("version_number");
+            
+            // Safety check for null version
+            if (newestVersionNumber == null) {
+                LOGGER.warning("Could not determine latest version from Modrinth API");
+                return;
+            }
+            
             String message;
             String prefix = ChatColor.DARK_GRAY + "[" + ChatColor.GRAY + "StatusPlugin" + ChatColor.DARK_GRAY + "] " + ChatColor.RESET;
             if (newestVersionNumber.equals(currentVersion)) {
@@ -70,17 +83,27 @@ public class ModrinthVersionChecker {
     }
 
     private static boolean isVersionHigher(String version1, String version2) {
-        String[] v1 = version1.split("\\.");
-        String[] v2 = version2.split("\\.");
-        int length = Math.max(v1.length, v2.length);
-        for (int i = 0; i < length; i++) {
-            int num1 = i < v1.length ? Integer.parseInt(v1[i]) : 0;
-            int num2 = i < v2.length ? Integer.parseInt(v2[i]) : 0;
-            if (num1 > num2) {
-                return true;
-            } else if (num1 < num2) {
-                return false;
+        // Null safety checks
+        if (version1 == null || version2 == null) {
+            return false;
+        }
+        
+        try {
+            String[] v1 = version1.split("\\.");
+            String[] v2 = version2.split("\\.");
+            int length = Math.max(v1.length, v2.length);
+            for (int i = 0; i < length; i++) {
+                int num1 = i < v1.length ? Integer.parseInt(v1[i]) : 0;
+                int num2 = i < v2.length ? Integer.parseInt(v2[i]) : 0;
+                if (num1 > num2) {
+                    return true;
+                } else if (num1 < num2) {
+                    return false;
+                }
             }
+        } catch (NumberFormatException e) {
+            LOGGER.warning("Invalid version format: " + version1 + " or " + version2);
+            return false;
         }
         return false;
     }

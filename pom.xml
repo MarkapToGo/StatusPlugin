@@ -6,7 +6,7 @@
 
     <groupId>de.stylelabor</groupId>
     <artifactId>StatusPlugin</artifactId>
-    <version>1</version>
+    <version>6.0.0</version>
     <packaging>jar</packaging>
 
     <name>StatusPlugin</name>
@@ -37,6 +37,10 @@
                             <pattern>org.bstats</pattern>
                             <!-- Replace this with your package! -->
                             <shadedPattern>de.stylelabor</shadedPattern>
+                        </relocation>
+                        <relocation>
+                            <pattern>net.kyori</pattern>
+                            <shadedPattern>de.stylelabor.lib.kyori</shadedPattern>
                         </relocation>
                     </relocations>
                 </configuration>
@@ -128,6 +132,16 @@
             <groupId>net.kyori</groupId>
             <artifactId>adventure-platform-bukkit</artifactId>
             <version>4.3.2</version>
+        </dependency>
+        <dependency>
+            <groupId>net.kyori</groupId>
+            <artifactId>adventure-text-minimessage</artifactId>
+            <version>4.17.0</version>
+        </dependency>
+        <dependency>
+            <groupId>net.kyori</groupId>
+            <artifactId>adventure-text-serializer-legacy</artifactId>
+            <version>4.17.0</version>
         </dependency>
 
         <dependency>

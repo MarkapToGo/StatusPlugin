@@ -1,7 +1,6 @@
 package de.stylelabor.statusplugin;
 
 import me.clip.placeholderapi.expansion.PlaceholderExpansion;
-import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 
@@ -46,7 +45,7 @@ public class StatusPlaceholder extends PlaceholderExpansion {
 
         if (identifier.equals("status")) {
             String status = plugin.getPlayerStatus(player.getUniqueId());
-            return ChatColor.translateAlternateColorCodes('&', status);
+            return ColorParser.parse(status);
         } else if (identifier.equals("country")) {
             if (!plugin.getConfig().getBoolean("country-location-enabled", false)) {
                 return "";
@@ -71,14 +70,8 @@ public class StatusPlaceholder extends PlaceholderExpansion {
             return String.valueOf(plugin.getPlayerDeaths(player.getUniqueId()));
         } else if (identifier.equalsIgnoreCase("performance") || identifier.equalsIgnoreCase("performance_label")) {
             return plugin.getPerformanceLabel();
-        } else if (identifier.equalsIgnoreCase("total_blocks")) {
-            return plugin.getFormattedTotalBlocksPlaced();
-        } else if (identifier.equalsIgnoreCase("total_blocks_raw")) {
-            return String.valueOf(plugin.getTotalBlocksPlaced());
-        } else if (identifier.equalsIgnoreCase("total_blocks_broken")) {
-            return plugin.getFormattedTotalBlocksBroken();
-        } else if (identifier.equalsIgnoreCase("total_blocks_broken_raw")) {
-            return String.valueOf(plugin.getTotalBlocksBroken());
+        } else if (identifier.equalsIgnoreCase("mspt")) {
+            return plugin.getMspt();
         } else if (identifier.equalsIgnoreCase("total_deaths")) {
             return plugin.getFormattedTotalTrackedDeaths();
         } else if (identifier.equalsIgnoreCase("total_deaths_raw")) {

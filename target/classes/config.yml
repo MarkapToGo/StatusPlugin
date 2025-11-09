@@ -4,10 +4,23 @@
 ###############################################
 
 # -------------------------------------------------
-# Version                                          
-# Used for comparing against latest plugin version 
+# AUTOMATIC CONFIG UPDATE SYSTEM
 # -------------------------------------------------
-current_version: "5.9"
+# When you upgrade to a newer version of the plugin:
+# ✓ New config options are automatically added
+# ✓ Your existing settings are preserved
+# ✓ A backup is created (config.yml.backup-v#)
+# ✓ Version numbers are automatically updated
+#
+# You never need to delete your config file!
+# -------------------------------------------------
+
+# -------------------------------------------------
+# Version Information
+# DO NOT EDIT - Automatically managed by the plugin
+# -------------------------------------------------
+config-version: 6
+plugin-version: "6.0.0"
 
 # -------------------------------------------------
 # Command                                           
@@ -17,14 +30,16 @@ command-name: status
 
 # -------------------------------------------------
 # Defaults                                          
-# Default status settings                           
+# Default status settings
+# Set to true to give all players a default status on join
 # -------------------------------------------------
 default_status_enabled: false
 default_status: "&8[&7Player&8]&r" #--> [Player]
 
 # -------------------------------------------------
 # Chat Formatting                                   
-# Placeholders: %status%, %country%, %countrycode%, %deaths%, $$PLAYER$$                
+# Placeholders: %status%, %country%, %countrycode%, %deaths%, $$PLAYER$$
+# Supports legacy & color codes
 # -------------------------------------------------
 chat-format: "%status% &r<$$PLAYER$$> &e%countrycode%"
 chat-format-no-status: "&r<$$PLAYER$$> &e%countrycode%"
@@ -32,6 +47,7 @@ chat-format-no-status: "&r<$$PLAYER$$> &e%countrycode%"
 # -------------------------------------------------
 # Tab List Formatting                               
 # Placeholders: %status%, %country%, %countrycode%, %deaths%, $$PLAYER$$
+# Supports legacy & color codes
 # -------------------------------------------------
 tab-list-format: "&a%status% &r$$PLAYER$$ &e%countrycode% &8[&c☠ %deaths%&8]"
 tab-list-format-no-status: "&r$$PLAYER$$ &e%countrycode% &8[&c☠ %deaths%&8]"
@@ -39,7 +55,7 @@ custom-tablist-enabled: false # Edit tablist.yml to configure header/footer when
 tab-refresh-interval-ticks: 20 # How often dynamic tab placeholders refresh (20 ticks = 1 second)
 tab-dimension-refresh-interval-ticks: 200 # How often dimension player counts refresh (200 ticks = 10 seconds)
 tab-list-sort-by-status: true # Sort players by status (Admins → Mods → Status → AFK/CAM at end)
-# Extra tab placeholders: %total_blocks%, %total_blocks_broken%, %total_deaths%, %performance%, %rotating_line%, %online_players%, %max_players%, %overworld_players%, %nether_players%, %end_players%, %server_time%, %tps%, %tps_5m%, %tps_15m%
+# Extra tab placeholders: %total_deaths%, %performance%, %rotating_line%, %online_players%, %max_players%, %overworld_players%, %nether_players%, %end_players%, %server_time%, %tps%, %tps_5m%, %tps_15m%, %mspt%
 
 # -------------------------------------------------
 # Permissions                                       
@@ -80,7 +96,10 @@ country-cache-enabled: true     # Cache switch: Save country data to avoid repea
 
 # -------------------------------------------------
 # Status Options                                    
-# Add more in: status-options.yml                   
+# Add more in: status-options.yml
+# Supports legacy & color codes
+# Examples:
+#   Legacy: "&a[VIP]&r" or "&x&F&F&0&0&0&0[RED]"
 # -------------------------------------------------
 
 # -------------------------------------------------
@@ -117,11 +136,8 @@ language:
 # %statusplugin_performance% - Current server performance label (color-coded & underlined)
 #                            Example: "&a&nSMOOTH&r"
 #
-# %statusplugin_total_blocks% - Total blocks placed (short style: 12.4k, 3.1m, etc.)
-# %statusplugin_total_blocks_raw% - Total blocks placed (full number)
-#
-# %statusplugin_total_blocks_broken% - Total blocks broken (short style)
-# %statusplugin_total_blocks_broken_raw% - Total blocks broken (full number)
+# %statusplugin_mspt%        - Server MSPT (milliseconds per tick) - Paper only
+#                            Example: "12.45", "N/A" (if not on Paper)
 #
 # %statusplugin_total_deaths% - Total tracked player deaths (short style)
 # %statusplugin_total_deaths_raw% - Total tracked player deaths (full number)
