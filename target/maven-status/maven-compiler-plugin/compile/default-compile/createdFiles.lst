@@ -2,10 +2,13 @@ de\stylelabor\statusplugin\StatusPlugin.class
 de\stylelabor\statusplugin\StatusPlugin$LibertyBansIntegration.class
 de\stylelabor\statusplugin\ModrinthVersionChecker.class
 de\stylelabor\statusplugin\CountryLocationManager$CountryData.class
+de\stylelabor\statusplugin\nametag\StatusNametagManager$NametagParts.class
 de\stylelabor\statusplugin\StatusPlaceholder.class
 de\stylelabor\statusplugin\StatusPlugin$1.class
 de\stylelabor\statusplugin\StatusPlugin$TabEnvironmentSnapshot.class
+de\stylelabor\statusplugin\nametag\StatusNametagManager.class
 de\stylelabor\statusplugin\ColorParser.class
 de\stylelabor\statusplugin\StatusPlugin$MuteInfo.class
 de\stylelabor\statusplugin\CountryLocationManager.class
 de\stylelabor\statusplugin\StatusPlugin$2.class
+de\stylelabor\statusplugin\nametag\StatusNametagManager$1.class

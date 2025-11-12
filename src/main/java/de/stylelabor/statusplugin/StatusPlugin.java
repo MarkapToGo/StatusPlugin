@@ -1,5 +1,6 @@
 package de.stylelabor.statusplugin;
 
+import de.stylelabor.statusplugin.nametag.StatusNametagManager;
 import me.neznamy.tab.api.TabAPI;
 import me.neznamy.tab.api.TabPlayer;
 import me.neznamy.tab.api.tablist.HeaderFooterManager;
@@ -32,8 +33,6 @@ import org.bukkit.plugin.EventExecutor;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
-import org.bukkit.scoreboard.Scoreboard;
-import org.bukkit.scoreboard.Team;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
@@ -59,6 +58,10 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     private String commandName;
     private String tabListFormat;
     private boolean customTabListEnabled;
+    private boolean nametagStatusEnabled;
+    private boolean nametagCleanJoinMessage;
+    private boolean nametagCleanDeathMessage;
+    private StatusNametagManager nametagManager;
     private List<String> tabListHeaderLines = Collections.emptyList();
     private List<String> tabListFooterLines = Collections.emptyList();
     private final HashMap<String, String> statusOptions = new HashMap<>();
@@ -94,12 +97,11 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     private static final String PLACEHOLDER_NOT_AVAILABLE = "N/A";
     private static final int STATS_AUTOSAVE_INTERVAL_TICKS = 6000;
     private static final long STATS_SAVE_DELAY_TICKS = 200L;
-    private Scoreboard sortingScoreboard;
-    private final HashMap<String, Team> statusTeams = new HashMap<>();
     private BukkitTask delayedStatsSaveTask;
     @Override
     public void onEnable() {
         // Plugin startup logic
+        nametagManager = new StatusNametagManager(this);
         saveDefaultConfig();
         updateConfigIfNeeded();
         loadConfig();
@@ -158,9 +160,9 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         
         startTabRefreshSchedulers();
         
-        // Initialize scoreboard for tab list sorting (delayed to ensure server is ready)
-        if (getConfig().getBoolean("tab-list-sort-by-status", true)) {
-            Bukkit.getScheduler().runTask(this, this::initializeSortingScoreboard);
+        if (nametagManager != null) {
+            nametagManager.scheduleInitialization();
+            nametagManager.updateAllPlayerTeams();
         }
 
     }
@@ -194,6 +196,9 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         savePlayerStatusConfig(); // Save player status during plugin shutdown
         savePlayerDeathsConfig(); // Save player deaths during plugin shutdown
         persistServerStats(true);
+        if (nametagManager != null) {
+            nametagManager.tearDown();
+        }
         if (countryLocationManager != null) {
             countryLocationManager.saveAllPlayerCountries(); // Save country data during plugin shutdown
         }
@@ -231,7 +236,9 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
                     getLogger().info("Set status for " + player.getName() + ": " + status);
                     
                     // Assign player to team for sorting
-                    assignPlayerToTeam(player);
+                    if (nametagManager != null) {
+                        nametagManager.assignPlayer(player);
+                    }
                     updatePlayerTabList();
 
                     // Save the player status to player-status.yml
@@ -247,7 +254,9 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
                 player.sendMessage(ColorParser.parse(message));
                 
                 // Assign player to team for sorting
-                assignPlayerToTeam(player);
+                if (nametagManager != null) {
+                    nametagManager.assignPlayer(player);
+                }
                 updatePlayerTabList();
 
                 // Clear the player status in player-status.yml
@@ -267,7 +276,9 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             player.sendMessage(ColorParser.parse(message));
             
             // Assign player to team for sorting
-            assignPlayerToTeam(player);
+            if (nametagManager != null) {
+                nametagManager.assignPlayer(player);
+            }
             updatePlayerTabList();
 
             // Clear the player status in player-status.yml
@@ -444,7 +455,9 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             targetPlayer.sendMessage(ColorParser.parse(String.format(message, status)));
             
             // Assign player to team for sorting
-            assignPlayerToTeam(targetPlayer);
+            if (nametagManager != null) {
+                nametagManager.assignPlayer(targetPlayer);
+            }
             updatePlayerTabList();
 
             playerStatusConfig.set(targetPlayer.getUniqueId().toString(), status);
@@ -501,8 +514,18 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         // Update tab list if tab styling is enabled
         if (getConfig().getBoolean("tab-styling-enabled", true)) {
             // Assign player to team for sorting
-            assignPlayerToTeam(player);
+            if (nametagManager != null) {
+                nametagManager.assignPlayer(player);
+            }
             updatePlayerTabList();
+        }
+
+        if (nametagCleanJoinMessage) {
+            String joinMessage = event.getJoinMessage();
+            if (joinMessage != null && !joinMessage.isEmpty()) {
+                joinMessage = sanitizeDisplayNameOccurrences(joinMessage, player);
+                event.setJoinMessage(joinMessage);
+            }
         }
     }
 
@@ -521,6 +544,18 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             updatePlayerTabList();
         }
         Bukkit.getScheduler().runTask(this, () -> syncPlayerDeathsFromStatistic(player));
+
+        if (nametagCleanDeathMessage) {
+            String deathMessage = event.getDeathMessage();
+            if (deathMessage != null && !deathMessage.isEmpty()) {
+                deathMessage = sanitizeDisplayNameOccurrences(deathMessage, player);
+                Player killer = player.getKiller();
+                if (killer != null) {
+                    deathMessage = sanitizeDisplayNameOccurrences(deathMessage, killer);
+                }
+                event.setDeathMessage(deathMessage);
+            }
+        }
     }
 
     @EventHandler(priority = EventPriority.LOWEST)
@@ -853,7 +888,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         int currentConfigVersion = config.getInt("config-version", 1);
         
         // Expected config version for this plugin version
-        int expectedConfigVersion = 6;
+        int expectedConfigVersion = 8;
         
         // Check if update is needed
         if (currentConfigVersion >= expectedConfigVersion) {
@@ -940,6 +975,10 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         customTabListEnabled = config.getBoolean("custom-tablist-enabled", false);
         tabRefreshIntervalTicks = Math.max(1, config.getInt("tab-refresh-interval-ticks", 20));
         tabDimensionRefreshIntervalTicks = Math.max(tabRefreshIntervalTicks, config.getInt("tab-dimension-refresh-interval-ticks", 200));
+        boolean sortByStatus = config.getBoolean("tab-list-sort-by-status", true);
+        nametagStatusEnabled = config.getBoolean("nametag-status-enabled", false);
+        nametagCleanJoinMessage = config.getBoolean("nametag-clean-join-message", true);
+        nametagCleanDeathMessage = config.getBoolean("nametag-clean-death-message", true);
 
         // Load status options from status-options.yml
         loadStatusOptions();
@@ -950,6 +989,10 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         String defaultStatus = config.getString("default_status", "DEFAULT");
         if (defaultStatusEnabled) {
             statusOptions.put("DEFAULT", defaultStatus);
+        }
+
+        if (nametagManager != null) {
+            nametagManager.updateSettings(nametagStatusEnabled, sortByStatus);
         }
     }
 
@@ -1236,131 +1279,6 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     /**
      * Initialize the scoreboard for tab list sorting using teams
      */
-    private void initializeSortingScoreboard() {
-        try {
-            if (Bukkit.getScoreboardManager() == null) {
-                getLogger().warning("ScoreboardManager is not available yet. Tab list sorting will be disabled.");
-                return;
-            }
-            
-            sortingScoreboard = Bukkit.getScoreboardManager().getMainScoreboard();
-            statusTeams.clear();
-            getLogger().info("Initialized tab list sorting scoreboard");
-        } catch (Exception e) {
-            getLogger().severe("Failed to initialize scoreboard for tab list sorting: " + e.getMessage());
-            e.printStackTrace();
-        }
-    }
-    
-    /**
-     * Get or create a team for a specific status with the appropriate sorting prefix
-     */
-    private Team getOrCreateStatusTeam(String statusKey) {
-        if (sortingScoreboard == null) {
-            return null;
-        }
-        
-        // Create a unique team name with sorting prefix
-        String teamName = getTeamNameForStatus(statusKey);
-        
-        // Check cache first
-        Team team = statusTeams.get(teamName);
-        if (team != null) {
-            return team;
-        }
-        
-        // Check if team already exists on the scoreboard
-        team = sortingScoreboard.getTeam(teamName);
-        if (team == null) {
-            // Team doesn't exist, create it
-            try {
-                team = sortingScoreboard.registerNewTeam(teamName);
-            } catch (IllegalArgumentException e) {
-                // Team already exists (race condition), get it
-                team = sortingScoreboard.getTeam(teamName);
-            }
-        }
-        
-        // Add to cache
-        if (team != null) {
-            statusTeams.put(teamName, team);
-        }
-        
-        return team;
-    }
-    
-    /**
-     * Get the team name with sorting prefix for a status
-     * Format: <priority>_<statusname>
-     * Priority: 0=ADMIN, 1=MOD, 2=normal statuses, 9=AFK/CAM, z=no status (at the very end)
-     */
-    private String getTeamNameForStatus(String statusKey) {
-        if (statusKey == null || statusKey.isEmpty()) {
-            return "z_nostatus"; // 'z' ensures it sorts last
-        }
-        
-        String upperKey = statusKey.toUpperCase(Locale.ROOT);
-        switch (upperKey) {
-            case "ADMIN":
-                return "0_admin";
-            case "MOD":
-                return "1_mod";
-            case "AFK":
-                return "9_afk";
-            case "CAM":
-                return "9_cam";
-            default:
-                // Use status key for alphabetical sorting within normal statuses
-                return "2_" + statusKey.toLowerCase(Locale.ROOT);
-        }
-    }
-    
-    /**
-     * Assign a player to the appropriate team based on their status
-     */
-    private void assignPlayerToTeam(Player player) {
-        if (sortingScoreboard == null || !getConfig().getBoolean("tab-list-sort-by-status", true)) {
-            return;
-        }
-        
-        try {
-            String status = playerStatusMap.getOrDefault(player.getUniqueId(), "");
-            String statusKey = getStatusKey(status);
-            
-            // Remove player from any existing team in the scoreboard
-            Team currentTeam = sortingScoreboard.getEntryTeam(player.getName());
-            if (currentTeam != null) {
-                currentTeam.removeEntry(player.getName());
-            }
-            
-            // Add player to the appropriate team
-            Team team = getOrCreateStatusTeam(statusKey);
-            if (team != null) {
-                team.addEntry(player.getName());
-            }
-            
-            // Set the scoreboard for the player (only if they don't have one or have different one)
-            if (player.getScoreboard() != sortingScoreboard) {
-                player.setScoreboard(sortingScoreboard);
-            }
-        } catch (Exception e) {
-            getLogger().warning("Failed to assign player " + player.getName() + " to team: " + e.getMessage());
-        }
-    }
-    
-    /**
-     * Update all players' team assignments
-     */
-    private void updateAllPlayerTeams() {
-        if (sortingScoreboard == null || !getConfig().getBoolean("tab-list-sort-by-status", true)) {
-            return;
-        }
-        
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            assignPlayerToTeam(player);
-        }
-    }
-
     private void updatePlayerTabList() {
         updatePlayerTabList(TabEnvironmentSnapshot.capture(this));
     }
@@ -1368,7 +1286,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     /**
      * Get the status key from the status value (reverse lookup)
      */
-    private String getStatusKey(String statusValue) {
+    public String getStatusKeyFromValue(String statusValue) {
         if (statusValue == null || statusValue.isEmpty()) {
             return "";
         }
@@ -1385,10 +1303,9 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             return;
         }
 
-        // Update team assignments for all players (this handles the sorting)
-        boolean sortByStatus = getConfig().getBoolean("tab-list-sort-by-status", true);
-        if (sortByStatus && sortingScoreboard != null) {
-            updateAllPlayerTeams();
+        // Update team assignments for all players (handles sorting / nametag prefixes)
+        if (nametagManager != null && nametagManager.isActive()) {
+            nametagManager.updateAllPlayerTeams();
         }
 
         // Update the tab list display for each player
@@ -1613,6 +1530,26 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
 
     private String formatTabListText(String template, Player player, String status, String coloredPlayerName, CountryLocationManager.CountryData countryData, TabEnvironmentSnapshot snapshot) {
         return applyTabListPlaceholders(template, player, status, coloredPlayerName, countryData, snapshot, true);
+    }
+    
+    private String sanitizeDisplayNameOccurrences(String message, Player player) {
+        if (message == null || player == null) {
+            return message;
+        }
+
+        String displayName = player.getDisplayName();
+        String realName = player.getName();
+
+        if (displayName != null && !displayName.equals(realName)) {
+            message = message.replace(displayName, realName);
+        }
+
+        String strippedDisplay = displayName != null ? ChatColor.stripColor(displayName) : null;
+        if (strippedDisplay != null && !strippedDisplay.equals(realName)) {
+            message = message.replace(strippedDisplay, realName);
+        }
+
+        return message;
     }
 
     private String applyTabListPlaceholders(String template,
@@ -2220,14 +2157,11 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         refreshDimensionCache();
         startTabRefreshSchedulers();
         
-        // Reinitialize scoreboard for sorting
-        if (getConfig().getBoolean("tab-list-sort-by-status", true)) {
-            // Clear existing team cache
-            statusTeams.clear();
-            if (sortingScoreboard == null) {
-                initializeSortingScoreboard();
-            }
-            updateAllPlayerTeams();
+        if (nametagManager != null) {
+            boolean sortEnabled = getConfig().getBoolean("tab-list-sort-by-status", true);
+            nametagManager.updateSettings(nametagStatusEnabled, sortEnabled);
+            nametagManager.scheduleInitialization();
+            nametagManager.updateAllPlayerTeams();
         }
         
         updatePlayerTabList();

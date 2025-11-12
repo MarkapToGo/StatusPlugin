@@ -19,8 +19,8 @@
 # Version Information
 # DO NOT EDIT - Automatically managed by the plugin
 # -------------------------------------------------
-config-version: 6
-plugin-version: "6.0.0"
+config-version: 8
+plugin-version: "6.1.0"
 
 # -------------------------------------------------
 # Command                                           
@@ -71,6 +71,9 @@ only-admin-change-message: "&cOnly admins can change statuses."
 tab-styling-enabled: true
 chat-styling-enabled: true
 discordsrv-relay-enabled: true # Relay chat to Discord via DiscordSRV (if present)
+nametag-status-enabled: false # When true, show statuses in nametags above players' heads
+nametag-clean-join-message: true # Remove nametag colors/prefixes from join messages
+nametag-clean-death-message: true # Remove nametag colors/prefixes from death messages
 
 # -------------------------------------------------
 # Country Location Feature                          

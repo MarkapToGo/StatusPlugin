@@ -6,7 +6,7 @@
 
     <groupId>de.stylelabor</groupId>
     <artifactId>StatusPlugin</artifactId>
-    <version>6.0.0</version>
+    <version>6.1.0</version>
     <packaging>jar</packaging>
 
     <name>StatusPlugin</name>

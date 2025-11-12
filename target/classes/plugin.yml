@@ -1,5 +1,5 @@
 name: StatusPlugin
-version: '6.0.0'
+version: '6.1.0'
 main: de.stylelabor.statusplugin.StatusPlugin
 api-version: '1.14'
 load: POSTWORLD
