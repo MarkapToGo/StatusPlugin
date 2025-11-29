@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 
 public class StatusNametagManager {
 
@@ -20,7 +21,7 @@ public class StatusNametagManager {
     private final StatusPlugin plugin;
     private final Map<String, Team> statusTeams = new HashMap<>();
 
-    private Scoreboard sortingScoreboard;
+    private final Map<UUID, Scoreboard> playerScoreboards = new HashMap<>();
     private boolean nametagEnabled;
     private boolean sortEnabled;
 
@@ -33,11 +34,14 @@ public class StatusNametagManager {
         this.sortEnabled = sortEnabled;
 
         if (isActive()) {
-            ensureScoreboardInitialized(true);
+            // Reinitialize all player scoreboards
+            for (Player online : Bukkit.getOnlinePlayers()) {
+                ensurePlayerScoreboardInitialized(online, true);
+            }
         } else {
             clearStatusTeams();
             statusTeams.clear();
-            sortingScoreboard = null;
+            playerScoreboards.clear();
         }
     }
 
@@ -54,7 +58,14 @@ public class StatusNametagManager {
             return;
         }
         Bukkit.getScheduler().runTask(plugin, () -> {
-            if (ensureScoreboardInitialized(false)) {
+            // Ensure all online players have scoreboards initialized
+            boolean allInitialized = true;
+            for (Player online : Bukkit.getOnlinePlayers()) {
+                if (ensurePlayerScoreboardInitialized(online, false) == null) {
+                    allInitialized = false;
+                }
+            }
+            if (allInitialized) {
                 updateAllPlayerTeams();
             }
         });
@@ -65,20 +76,21 @@ public class StatusNametagManager {
             return;
         }
 
-        if (!ensureScoreboardInitialized(false)) {
+        Scoreboard scoreboard = ensurePlayerScoreboardInitialized(player, false);
+        if (scoreboard == null) {
             return;
         }
 
         try {
             // Remove from old team if necessary
-            Team currentTeam = sortingScoreboard.getEntryTeam(player.getName());
+            Team currentTeam = scoreboard.getEntryTeam(player.getName());
             if (currentTeam != null) {
                 currentTeam.removeEntry(player.getName());
             }
 
             String statusValue = plugin.getPlayerStatus(player.getUniqueId());
             String statusKey = plugin.getStatusKeyFromValue(statusValue);
-            Team team = getOrCreateStatusTeam(statusKey);
+            Team team = getOrCreateStatusTeam(scoreboard, statusKey);
             if (team == null) {
                 return;
             }
@@ -92,8 +104,8 @@ public class StatusNametagManager {
                 team.setSuffix("");
             }
 
-            if (player.getScoreboard() != sortingScoreboard) {
-                player.setScoreboard(sortingScoreboard);
+            if (player.getScoreboard() != scoreboard) {
+                player.setScoreboard(scoreboard);
             }
         } catch (Exception e) {
             plugin.getLogger().warning("Failed to assign player " + player.getName() + " to status team: " + e.getMessage());
@@ -102,9 +114,6 @@ public class StatusNametagManager {
 
     public void updateAllPlayerTeams() {
         if (!isActive()) {
-            return;
-        }
-        if (!ensureScoreboardInitialized(false)) {
             return;
         }
 
@@ -116,52 +125,50 @@ public class StatusNametagManager {
     public void tearDown() {
         clearStatusTeams();
         statusTeams.clear();
-        sortingScoreboard = null;
+        playerScoreboards.clear();
     }
 
-    private boolean ensureScoreboardInitialized(boolean logNotReady) {
-        if (!isActive()) {
-            return false;
+    private Scoreboard ensurePlayerScoreboardInitialized(Player player, boolean logNotReady) {
+        if (!isActive() || player == null) {
+            return null;
         }
 
-        if (sortingScoreboard != null) {
-            return true;
+        UUID playerUUID = player.getUniqueId();
+        Scoreboard scoreboard = playerScoreboards.get(playerUUID);
+        if (scoreboard != null) {
+            return scoreboard;
         }
 
         if (Bukkit.getScoreboardManager() == null) {
             if (logNotReady) {
                 plugin.getLogger().warning("ScoreboardManager is not available yet. Status sorting will be disabled temporarily.");
             }
-            return false;
+            return null;
         }
 
-        sortingScoreboard = Bukkit.getScoreboardManager().getMainScoreboard();
-        statusTeams.clear();
-        return true;
+        scoreboard = Bukkit.getScoreboardManager().getNewScoreboard();
+        playerScoreboards.put(playerUUID, scoreboard);
+        return scoreboard;
     }
 
-    private Team getOrCreateStatusTeam(String statusKey) {
-        if (sortingScoreboard == null) {
+    private Team getOrCreateStatusTeam(Scoreboard scoreboard, String statusKey) {
+        if (scoreboard == null) {
             return null;
         }
 
         String teamName = getTeamNameForStatus(statusKey);
-        Team team = statusTeams.get(teamName);
+        
+        // Check if team already exists on this scoreboard
+        Team team = scoreboard.getTeam(teamName);
         if (team != null) {
             return team;
         }
 
-        team = sortingScoreboard.getTeam(teamName);
-        if (team == null) {
-            try {
-                team = sortingScoreboard.registerNewTeam(teamName);
-            } catch (IllegalArgumentException ignored) {
-                team = sortingScoreboard.getTeam(teamName);
-            }
-        }
-
-        if (team != null) {
-            statusTeams.put(teamName, team);
+        // Create new team on this scoreboard
+        try {
+            team = scoreboard.registerNewTeam(teamName);
+        } catch (IllegalArgumentException ignored) {
+            team = scoreboard.getTeam(teamName);
         }
 
         return team;
@@ -286,19 +293,46 @@ public class StatusNametagManager {
     }
 
     private void clearStatusTeams() {
-        if (sortingScoreboard == null || statusTeams.isEmpty()) {
+        if (playerScoreboards.isEmpty()) {
             return;
         }
 
-        for (Team team : new HashSet<>(statusTeams.values())) {
-            if (team == null) {
+        for (Scoreboard scoreboard : new HashSet<>(playerScoreboards.values())) {
+            if (scoreboard == null) {
                 continue;
             }
-            for (String entry : new HashSet<>(team.getEntries())) {
-                team.removeEntry(entry);
+            for (Team team : scoreboard.getTeams()) {
+                if (team == null) {
+                    continue;
+                }
+                for (String entry : new HashSet<>(team.getEntries())) {
+                    team.removeEntry(entry);
+                }
+                team.setPrefix("");
+                team.setSuffix("");
             }
-            team.setPrefix("");
-            team.setSuffix("");
+        }
+    }
+
+    public void removePlayer(Player player) {
+        if (player == null) {
+            return;
+        }
+
+        UUID playerUUID = player.getUniqueId();
+        Scoreboard scoreboard = playerScoreboards.remove(playerUUID);
+        
+        if (scoreboard != null) {
+            // Clean up teams on this player's scoreboard
+            for (Team team : scoreboard.getTeams()) {
+                if (team != null) {
+                    for (String entry : new HashSet<>(team.getEntries())) {
+                        team.removeEntry(entry);
+                    }
+                    team.setPrefix("");
+                    team.setSuffix("");
+                }
+            }
         }
     }
 }
