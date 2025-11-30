@@ -19,7 +19,7 @@
 # Version Information
 # DO NOT EDIT - Automatically managed by the plugin
 # -------------------------------------------------
-config-version: 8
+config-version: 9
 plugin-version: "6.1.0"
 
 # -------------------------------------------------
@@ -74,6 +74,19 @@ discordsrv-relay-enabled: true # Relay chat to Discord via DiscordSRV (if presen
 nametag-status-enabled: false # When true, show statuses in nametags above players' heads
 nametag-clean-join-message: true # Remove nametag colors/prefixes from join messages
 nametag-clean-death-message: true # Remove nametag colors/prefixes from death messages
+
+# -------------------------------------------------
+# Word Replacement Feature
+# Replace exact words in chat messages with configured replacements
+# -------------------------------------------------
+word-replacement:
+  enabled: false # Master toggle for word replacement feature
+  case-sensitive: false # When true, matching is case-sensitive (e.g., "F" != "f")
+  replacements: # Map of words to their replacements (supports color codes like &a, &c, &x&F&F&0&0&0&0)
+    "f": "&cɪ ᴀᴍ ꜱᴛᴜᴘɪᴅ"
+    # Add more replacements here:
+    # "example": "&aReplacement &etext"
+    # "hello": "&b&lHello &r&7World"
 
 # -------------------------------------------------
 # Country Location Feature                          

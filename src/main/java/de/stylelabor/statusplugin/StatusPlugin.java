@@ -76,6 +76,9 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
     private boolean isDiscordSrvPresent;
     private boolean isLibertyBansPresent;
     private LibertyBansIntegration libertyBansIntegration;
+    private boolean wordReplacementEnabled;
+    private boolean wordReplacementCaseSensitive;
+    private final HashMap<String, String> wordReplacements = new HashMap<>();
     private CountryLocationManager countryLocationManager;
     private long totalTrackedDeaths;
     private boolean serverStatsDirty;
@@ -590,6 +593,9 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
             return; // Skip chat styling if disabled
         }
 
+        // Apply word replacements to the message
+        String processedMessage = applyWordReplacements(originalMessage);
+
         String status = playerStatusMap.getOrDefault(player.getUniqueId(), "");
 
         // Debug logging
@@ -638,7 +644,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
 
         // Create a TextComponent for the formatted message
         BaseComponent[] statusComponent = TextComponent.fromLegacyText(chatFormat);
-        String messageText = originalMessage;
+        String messageText = processedMessage;
         if (usingAdminStatus) {
             messageText = ChatColor.RED + messageText + ChatColor.RESET;
         }
@@ -666,7 +672,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         cancellable.setCancelled(true);
 
         // Relay to DiscordSRV by firing a synthetic chat event on the main thread with no recipients
-        relayChatToDiscord(player, originalMessage);
+        relayChatToDiscord(player, processedMessage);
     }
 
     private boolean cancelIfMuted(Player player, Cancellable event) {
@@ -897,7 +903,7 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         int currentConfigVersion = config.getInt("config-version", 1);
         
         // Expected config version for this plugin version
-        int expectedConfigVersion = 8;
+        int expectedConfigVersion = 9;
         
         // Check if update is needed
         if (currentConfigVersion >= expectedConfigVersion) {
@@ -988,6 +994,22 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         nametagStatusEnabled = config.getBoolean("nametag-status-enabled", false);
         nametagCleanJoinMessage = config.getBoolean("nametag-clean-join-message", true);
         nametagCleanDeathMessage = config.getBoolean("nametag-clean-death-message", true);
+
+        // Load word replacement settings
+        wordReplacementEnabled = config.getBoolean("word-replacement.enabled", false);
+        wordReplacementCaseSensitive = config.getBoolean("word-replacement.case-sensitive", false);
+        wordReplacements.clear();
+        if (wordReplacementEnabled && config.isConfigurationSection("word-replacement.replacements")) {
+            ConfigurationSection replacementsSection = config.getConfigurationSection("word-replacement.replacements");
+            if (replacementsSection != null) {
+                for (String key : replacementsSection.getKeys(false)) {
+                    String replacement = replacementsSection.getString(key);
+                    if (replacement != null) {
+                        wordReplacements.put(key, replacement);
+                    }
+                }
+            }
+        }
 
         // Load status options from status-options.yml
         loadStatusOptions();
@@ -1559,6 +1581,54 @@ public final class StatusPlugin extends JavaPlugin implements Listener, TabCompl
         }
 
         return message;
+    }
+
+    /**
+     * Apply word replacements to a chat message.
+     * Replaces exact whole words with their configured replacements.
+     * 
+     * @param message The original message
+     * @return The message with replacements applied
+     */
+    private String applyWordReplacements(String message) {
+        if (!wordReplacementEnabled || message == null || message.isEmpty() || wordReplacements.isEmpty()) {
+            return message;
+        }
+
+        String result = message;
+        
+        // Process each replacement
+        for (Map.Entry<String, String> entry : wordReplacements.entrySet()) {
+            String wordToReplace = entry.getKey();
+            String replacement = entry.getValue();
+            
+            if (wordToReplace == null || wordToReplace.isEmpty()) {
+                continue;
+            }
+            
+            // Parse color codes in the replacement text
+            String parsedReplacement = ColorParser.parse(replacement != null ? replacement : "");
+            
+            // Escape special regex characters in the word
+            String escapedWord = java.util.regex.Pattern.quote(wordToReplace);
+            
+            // Build regex pattern with word boundaries for whole-word matching
+            String pattern;
+            if (wordReplacementCaseSensitive) {
+                pattern = "\\b" + escapedWord + "\\b";
+            } else {
+                pattern = "(?i)\\b" + escapedWord + "\\b";
+            }
+            
+            // Perform replacement (quote replacement to escape special regex characters)
+            try {
+                result = result.replaceAll(pattern, java.util.regex.Matcher.quoteReplacement(parsedReplacement));
+            } catch (Exception e) {
+                getLogger().warning("Error applying word replacement for '" + wordToReplace + "': " + e.getMessage());
+            }
+        }
+        
+        return result;
     }
 
     private String applyTabListPlaceholders(String template,
