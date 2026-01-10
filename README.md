@@ -62,7 +62,7 @@ We use **Modrinth** for updates.
 
 This project is licensed under a **Custom License**.
 
-* ✅ You **CAN** modify the code for your own personal use or server.
-* ❌ You **CANNOT** distribute or share modified versions.
+* ✅ You **CAN** modify the code and host source on GitHub.
+* ❌ You **CANNOT** upload the plugin to platforms like SpigotMC, Modrinth, or CurseForge.
 
 See the `LICENSE` file for details.
