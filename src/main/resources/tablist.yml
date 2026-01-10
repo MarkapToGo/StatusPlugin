@@ -1,0 +1,67 @@
+# Tab List Configuration
+# Uses MiniMessage format for all text
+
+# ==========================================
+# Header Configuration
+# ==========================================
+header:
+  # Static header lines (displayed above rotating line)
+  lines:
+    - ""
+    - "<gradient:gold:yellow><bold>★ YOUR SERVER NAME ★</bold></gradient>"
+    - "<gray>Welcome, <white><player></white>!</gray>"
+    - ""
+    - "<rotating>"
+
+# ==========================================
+# Footer Configuration
+# ==========================================
+footer:
+  # Static footer lines (displayed below rotating line)
+  lines:
+    - ""
+    - "<dark_gray>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</dark_gray>"
+    - "<gray>Players: <white><online></white>/<white><max></white></gray>"
+    - ""
+
+# ==========================================
+# Rotating Messages
+# ==========================================
+rotating:
+  # Enable rotating messages between header and footer
+  enabled: true
+  
+  # Interval in seconds between message changes
+  interval: 5
+  
+  # Messages to rotate through
+  messages:
+    - "<gray>TPS: <performance></gray>"
+    - "<gray>Server Time: <white><time></white></gray>"
+    - "<gray>Total Deaths: <red><total_deaths></red></gray>"
+    - "<gray>Overworld Players: <white><overworld></white></gray>"
+    - "<aqua>Join our Discord!</aqua>"
+    - "<gold>Support us at example.com/donate</gold>"
+
+# ==================================================================
+# Available Placeholders 
+# ==================================================================
+# <status>            - Player's status prefix
+# <player>            - Player name
+# <deaths>            - Player's death count
+# <deaths_formatted>  - Player's death count (formatted)
+# <country>           - Player's country name
+# <countrycode>       - Player's country code
+# <rotating>          - Current rotating message
+# <online>            - Online player count
+# <max>               - Max player slots
+# <tps>               - Server TPS (1 min)
+# <tps_5m>            - Server TPS (5 min)
+# <tps_15m>           - Server TPS (15 min)
+# <mspt>              - Milliseconds per tick
+# <performance>       - Performance indicator (colored TPS)
+# <time>              - Server time (HH:mm)
+# <overworld>         - Players in overworld
+# <nether>            - Players in nether
+# <end>               - Players in the end
+# <total_deaths>      - Total server deaths (formatted)

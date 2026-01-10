@@ -1,0 +1,22 @@
+name: StatusPlugin
+version: ${version}
+main: de.stylelabor.statusplugin.StatusPlugin
+description: Status prefix system with chat formatting, tab list, and integrations
+author: Markap
+website: https://stylelabor.de
+api-version: '1.21'
+
+dependencies:
+  server:
+    PlaceholderAPI:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    TAB:
+      load: BEFORE
+      required: false
+      join-classpath: true
+    LibertyBans:
+      load: BEFORE
+      required: false
+      join-classpath: true

@@ -1,0 +1,38 @@
+# Status Options Configuration
+# Define available statuses using MiniMessage format
+# Format: STATUS_KEY: "MiniMessage formatted prefix"
+
+# Permission-restricted statuses:
+# - ADMIN requires statusplugin.admin permission
+# - MOD requires statusplugin.mod permission
+
+statuses:
+  # Staff statuses (permission required)
+  ADMIN: "<dark_red>[<bold>★ ADMIN</bold>]</dark_red>"
+  MOD: "<red>[<bold>MOD</bold>]</red>"
+  
+  # Regular statuses (no permission required)
+  VIP: "<gold>[<bold>VIP</bold>]</gold>"
+  MEMBER: "<green>[Member]</green>"
+  
+  # Activity statuses
+  AFK: "<gray>[AFK]</gray>"
+  CAM: "<aqua>[CAM]</aqua>"
+  STREAMING: "<light_purple>[<bold>LIVE</bold>]</light_purple>"
+  RECORDING: "<red>[●REC]</red>"
+  
+  # Fun statuses
+  BUILDING: "<yellow>[🏗 Building]</yellow>"
+  MINING: "<dark_aqua>[⛏ Mining]</dark_aqua>"
+  FARMING: "<dark_green>[🌾 Farming]</dark_green>"
+  EXPLORING: "<blue>[🧭 Exploring]</blue>"
+  FIGHTING: "<dark_red>[⚔ Fighting]</dark_red>"
+  TRADING: "<gold>[💰 Trading]</gold>"
+  CODING: "<gray>[</gray><gradient:green:aqua>Coding</gradient><gray>]</gray>"
+
+# Status restrictions
+# Map status keys to required permissions
+# If not listed here, status is available to everyone
+restrictions:
+  ADMIN: "statusplugin.admin"
+  MOD: "statusplugin.mod"

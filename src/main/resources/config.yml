@@ -1,0 +1,136 @@
+# StatusPlugin Configuration
+# All text uses MiniMessage format: https://docs.advntr.dev/minimessage/format.html
+
+# ==========================================
+# General Settings
+# ==========================================
+general:
+  # Debug mode - enables verbose logging
+  debug: false
+  
+  # Default status for new players (leave empty for no default)
+  default-status: ""
+  
+  # Status command name (requires restart to change)
+  command-name: "status"
+
+# ==========================================
+# Chat Formatting
+# ==========================================
+chat:
+  # Enable custom chat formatting
+  enabled: true
+  
+  # Chat format using MiniMessage
+  # Available placeholders:
+  # <status> - Player's status prefix
+  # <player> - Player name
+  # <message> - Chat message
+  # <deaths> - Player's death count
+  # <country> - Player's country name
+  # <countrycode> - Player's country code (e.g., US, DE)
+  format: "<status> <gray><player></gray> <dark_gray>»</dark_gray> <white><message></white>"
+  
+  # Make URLs in chat clickable
+  # Make URLs in chat clickable
+  clickable-urls: true
+  
+  # Styling for clickable URLs
+  # You can use standard colors/styles (e.g. blue, aqua, underlined)
+  url-style: "<aqua><u>"
+  
+  # Hover text for URLs (set to "" to disable)
+  url-hover: "<gray>Click to open URL"
+
+# ==========================================
+# Tab List Settings
+# ==========================================
+tablist:
+  # Enable custom tab list formatting
+  enabled: true
+  
+  # Player display name format in tab list
+  # Same placeholders as chat format
+  # If country is disabled, the <countrycode> placeholder will be empty
+  player-format: "<status> <gray><player></gray> <deaths_formatted> <dark_gray><countrycode></dark_gray>"
+  
+  # Refresh interval in seconds (for header/footer updates)
+  refresh-interval: 5
+  
+  # Enable sorting by status priority
+  sorting:
+    enabled: true
+    # Priority order (first = top of list)
+    # Players without status will be after all defined statuses
+    priority:
+      - "ADMIN"
+      - "MOD"
+      - "VIP"
+      - "MEMBER"
+      - "_OTHER_" # All other statuses (e.g. Building, Farming)
+      - "AFK"
+      - "CAM"
+
+# ==========================================
+# Nametag Settings
+# ==========================================
+nametag:
+  # Enable status prefix above player heads
+  enabled: false
+  
+  # Remove nametag formatting from join messages
+  clean-join-messages: true
+  
+  # Remove nametag formatting from death messages
+  clean-death-messages: true
+
+# ==========================================
+# Death Tracking
+# ==========================================
+deaths:
+  # Enable death tracking
+  enabled: true
+  
+  # Sync with vanilla DEATHS statistic
+  sync-with-vanilla: true
+  
+  # Save delay in seconds (batched saves to reduce disk I/O)
+  save-delay: 30
+
+# ==========================================
+# Country Location (IP Geolocation)
+# ==========================================
+country:
+  # Enable country detection (disabled by default for privacy)
+  enabled: false
+  
+  # Cache duration in hours (0 = forever until restart)
+  cache-duration: 24
+
+# ==========================================
+# Integrations
+# ==========================================
+integrations:
+  # PlaceholderAPI integration
+  placeholderapi:
+    enabled: true
+  
+  # TAB plugin integration
+  # When enabled, uses TAB's API instead of built-in tab list
+  tab-plugin:
+    enabled: true
+  
+  # LibertyBans integration
+  # Custom styled mute notifications
+  libertybans:
+    enabled: true
+
+# ==========================================
+# Update Checker
+# ==========================================
+updates:
+  # Check for updates on Modrinth
+  enabled: true
+  
+  # Only notify ops
+  notify-ops: true

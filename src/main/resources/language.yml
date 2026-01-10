@@ -1,0 +1,51 @@
+# Language Configuration
+# All messages use MiniMessage format
+
+# Prefix used in all plugin messages
+prefix: "<gray>[<gradient:gold:yellow>Status</gradient>]</gray> "
+
+# ==========================================
+# General Messages
+# ==========================================
+messages:
+  # Status commands
+  status-set: "<prefix><green>Your status has been set to <status>."
+  status-cleared: "<prefix><yellow>Your status has been cleared."
+  status-current: "<prefix><gray>Your current status: <status>"
+  status-current-none: "<prefix><gray>You don't have a status set. Use <white>/status <option></white> to set one."
+  status-invalid: "<prefix><red>Invalid status! Use tab-completion to see available options."
+  status-no-permission: "<prefix><red>You don't have permission to use this status."
+  status-list-header: "<prefix><gray>Available statuses:"
+  status-list-item: "<gray> • <white><status_key></white>: <status_display>"
+  
+  # Admin commands
+  admin-status-set: "<prefix><green>Set <white><target></white>'s status to <status>."
+  admin-status-target-offline: "<prefix><red>Player <white><target></white> is not online."
+  admin-reload: "<prefix><green>Configuration reloaded successfully!"
+  admin-no-permission: "<prefix><red>You don't have permission to do this."
+  
+  # Death tracking
+  deaths-view: "<prefix><gray><target>'s deaths: <white><deaths></white>"
+  deaths-set: "<prefix><green>Set <white><target></white>'s deaths to <white><deaths></white>."
+  deaths-add: "<prefix><green>Added <white><amount></white> deaths to <white><target></white>. Total: <white><deaths></white>"
+  deaths-remove: "<prefix><green>Removed <white><amount></white> deaths from <white><target></white>. Total: <white><deaths></white>"
+  deaths-reset: "<prefix><yellow>Reset <white><target></white>'s deaths to <white>0</white>."
+  
+  # Error messages
+  error-player-only: "<prefix><red>This command can only be used by players."
+  error-invalid-usage: "<prefix><red>Invalid usage. <white><usage></white>"
+  error-player-not-found: "<prefix><red>Player not found."
+  error-invalid-number: "<prefix><red>Please enter a valid number."
+  
+  # Update checker
+  update-available: "<prefix><yellow>A new version (<white><version></white>) is available on Modrinth!"
+  update-link: "<click:open_url:'https://modrinth.com/plugin/statusplugin'><aqua>[Click here to download]</aqua></click>"
+
+# ==========================================
+# LibertyBans Integration
+# ==========================================
+libertybans:
+  mute-notification: |
+    <red><bold>You are muted!</bold></red>
+    <gray>Reason: <white><reason></white></gray>
+    <gray>Expires: <white><duration></white></gray>
