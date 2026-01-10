@@ -1,26 +1,22 @@
-MIT License with Modification Restriction
+Custom License Agreement
 
 Copyright (c) 2026 Markap / StyleLabor
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, and/or distribute copies of the Software,
-subject to the following conditions:
+Permissions and Restrictions:
 
-1. MODIFICATIONS: You are allowed to modify the source code for personal use
-   or use within your own organization/server.
+1.  **Source Code Hosting**: You are allowed to host, share, and fork the source code of this Software on development platforms (e.g., GitHub, GitLab) for personal, educational, or collaborative purposes.
 
-2. NO REDISTRIBUTION OF MODIFICATIONS: You are NOT allowed to distribute,
-   share, or publish modified versions of this Software (Only public github repository is allowed).
+2.  **Modifications**: You are allowed to modify the source code for your own personal use or for use within your own organization/server.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+3.  **No Binary Distribution on Platforms**: You are STRICTLY PROHIBITED from uploading, publishing, or distributing the compiled binary (JAR) or the source code to "Plugin Platforms" or "Marketplaces". This includes, but is not limited to:
+    *   SpigotMC
+    *   Modrinth
+    *   Hangar
+    *   CurseForge
+    *   BuiltByBit
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+4.  **No Commercial Use**: You may not sell this Software or any modified versions of it.
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
