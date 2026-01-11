@@ -223,7 +223,10 @@ public class TabListManager {
         resolvers.resolver(Placeholder.unparsed("country", country));
         resolvers.resolver(Placeholder.unparsed("countrycode", countryCode));
 
-        Component listName = miniMessage.deserialize(playerFormat, resolvers.build());
+        String formatWithPapi = de.stylelabor.statusplugin.util.PlaceholderUtil.parse(player, playerFormat);
+        formatWithPapi = de.stylelabor.statusplugin.util.ColorUtil.convertLegacyToMiniMessage(formatWithPapi);
+
+        Component listName = miniMessage.deserialize(formatWithPapi, resolvers.build());
 
         // Schedule on main thread as player list name changes require main thread
         Bukkit.getScheduler().runTask(plugin, () -> {
@@ -294,6 +297,11 @@ public class TabListManager {
      */
     @NotNull
     private Component parseWithPlaceholders(@NotNull String text, @NotNull Player player, boolean isNested) {
+        // Parse PAPI placeholders first
+        String textWithPapi = de.stylelabor.statusplugin.util.PlaceholderUtil.parse(player, text);
+        // Convert any legacy colors key PAPI might have returned
+        textWithPapi = de.stylelabor.statusplugin.util.ColorUtil.convertLegacyToMiniMessage(textWithPapi);
+
         String statusFormat = statusManager.getStatusFormat(player.getUniqueId());
         int deaths = deathTracker.getDeaths(player.getUniqueId());
         String country = countryManager.getCountry(player.getUniqueId()).orElse("");
@@ -370,7 +378,7 @@ public class TabListManager {
         long totalDeaths = deathTracker.getTotalDeaths();
         resolvers.resolver(Placeholder.unparsed("total_deaths", formatNumber(totalDeaths)));
 
-        return miniMessage.deserialize(text, resolvers.build());
+        return miniMessage.deserialize(textWithPapi, resolvers.build());
     }
 
     /**

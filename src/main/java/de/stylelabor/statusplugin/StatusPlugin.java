@@ -58,6 +58,9 @@ public class StatusPlugin extends JavaPlugin {
         configManager = new ConfigManager(this);
         configManager.loadAll();
 
+        // Initialize PlaceholderUtil
+        de.stylelabor.statusplugin.util.PlaceholderUtil.init(configManager);
+
         debug = configManager.getConfig().getBoolean("general.debug", false);
 
         // Initialize managers with dependency injection

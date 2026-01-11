@@ -143,7 +143,25 @@ public class ChatManager {
             resolvers.resolver(Placeholder.unparsed("countrycode", countryCode));
 
             // Parse the chat format with placeholders
-            return miniMessage.deserialize(chatFormat, resolvers.build());
+            // 1. Parse config placeholders (status, death etc) -> MiniMessage
+            // 2. Parse PAPI placeholders -> Legacy colors
+            // 3. Convert Legacy -> MiniMessage
+            // 4. Deserialize all
+
+            // Note: We need to be careful here.
+            // The chatFormat contains <status>, <player>, etc.
+            // PAPI placeholders are likely in the config string itself, e.g. "<status>
+            // %simplenick% ..."
+
+            // First, let's substitute our internal placeholders using MiniMessage as before
+            // BUT, if we want PAPI to work on the format string, we should do it first?
+            // If PAPI returns a legacy color code &c, MiniMessage won't parse it unless we
+            // convert it.
+
+            String formatWithPapi = de.stylelabor.statusplugin.util.PlaceholderUtil.parse(player, chatFormat);
+            formatWithPapi = de.stylelabor.statusplugin.util.ColorUtil.convertLegacyToMiniMessage(formatWithPapi);
+
+            return miniMessage.deserialize(formatWithPapi, resolvers.build());
         }
     }
 
