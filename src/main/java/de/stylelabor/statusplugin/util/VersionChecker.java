@@ -78,8 +78,11 @@ public final class VersionChecker {
                         downloadUrl = files.getJSONObject(0).optString("url", downloadUrl);
                     }
 
+                    if (downloadUrl == null) {
+                        downloadUrl = url;
+                    }
+
                     latestVersion = version;
-                    downloadUrl = url;
                     updateAvailable = isNewer(currentVersion, version);
 
                     callback.accept(version, url);
