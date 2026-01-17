@@ -59,6 +59,9 @@ tablist:
   
   # Enable sorting by status priority
   sorting:
+    # WARNING: This uses Scoreboard Teams on the main scoreboard.
+    # If another plugin uses teams (e.g. for disabling scoreboards), this might conflict.
+    # Disable this if you have issues with other scoreboard plugins.
     enabled: true
     # Priority order (first = top of list)
     # Players without status will be after all defined statuses
@@ -76,6 +79,7 @@ tablist:
 # ==========================================
 nametag:
   # Enable status prefix above player heads
+  # WARNING: This uses Scoreboard Teams. May conflict with other plugins using teams.
   enabled: false
   
   # Remove nametag formatting from join messages
