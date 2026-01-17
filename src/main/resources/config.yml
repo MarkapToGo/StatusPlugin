@@ -129,7 +129,7 @@ integrations:
 # Update Checker
 # ==========================================
 updates:
-  # Check for updates on Modrinth
+  # Check for updates on Modrinth (set to false to disable version checker entirely)
   enabled: true
   
   # Only notify ops

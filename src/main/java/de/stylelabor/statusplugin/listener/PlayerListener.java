@@ -77,17 +77,20 @@ public class PlayerListener implements Listener {
                 statusManager.getStatus(player) + ", deaths: " + deathTracker.getDeaths(player));
 
         // Notify admins about updates
-        if ((player.isOp() || player.hasPermission("statusplugin.admin")) &&
-                de.stylelabor.statusplugin.util.VersionChecker.isUpdateAvailable()) {
+        if (de.stylelabor.statusplugin.util.VersionChecker.isUpdateAvailable()) {
+            boolean notifyOps = configManager.getConfig().getBoolean("updates.notify-ops", true);
 
-            String latest = de.stylelabor.statusplugin.util.VersionChecker.getLatestVersion();
-            String downloadUrl = de.stylelabor.statusplugin.util.VersionChecker.getDownloadUrl();
+            if (notifyOps && (player.isOp() || player.hasPermission("statusplugin.admin"))) {
+                String latest = de.stylelabor.statusplugin.util.VersionChecker.getLatestVersion();
+                String downloadUrl = de.stylelabor.statusplugin.util.VersionChecker.getDownloadUrl();
 
-            player.sendMessage(plugin.parseMessage(
-                    "<gray>[<gradient:gold:yellow>StatusPlugin</gradient>] <gray>A new update is available: <gold>"
-                            + latest));
-            player.sendMessage(plugin.parseMessage(
-                    "<gray>Download: <click:open_url:'" + downloadUrl + "'><aqua><u>Modrinth Page</u></aqua></click>"));
+                player.sendMessage(plugin.parseMessage(
+                        "<gray>[<gradient:gold:yellow>StatusPlugin</gradient>] <gray>A new version is available: <gold>"
+                                + latest));
+                player.sendMessage(plugin.parseMessage(
+                        "<gray>Download: <click:open_url:'" + downloadUrl
+                                + "'><aqua><u>Modrinth Page</u></aqua></click>"));
+            }
         }
     }
 
