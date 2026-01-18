@@ -349,7 +349,8 @@ public class TabListManager {
         }
 
         // Server placeholders
-        resolvers.resolver(Placeholder.unparsed("online", String.valueOf(Bukkit.getOnlinePlayers().size())));
+        long onlineCount = Bukkit.getOnlinePlayers().stream().filter(p -> !isVanished(p)).count();
+        resolvers.resolver(Placeholder.unparsed("online", String.valueOf(onlineCount)));
         resolvers.resolver(Placeholder.unparsed("max", String.valueOf(Bukkit.getMaxPlayers())));
 
         // TPS and performance
@@ -405,11 +406,18 @@ public class TabListManager {
     private int getPlayersInEnvironment(@NotNull World.Environment environment) {
         int count = 0;
         for (Player player : Bukkit.getOnlinePlayers()) {
-            if (player.getWorld().getEnvironment() == environment) {
+            if (!isVanished(player) && player.getWorld().getEnvironment() == environment) {
                 count++;
             }
         }
         return count;
+    }
+
+    /**
+     * Check if a player is vanished (SuperVanish/PremiumVanish support)
+     */
+    private boolean isVanished(@NotNull Player player) {
+        return player.hasMetadata("vanished");
     }
 
     /**
