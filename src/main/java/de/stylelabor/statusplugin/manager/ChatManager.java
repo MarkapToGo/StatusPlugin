@@ -5,6 +5,7 @@ import de.stylelabor.statusplugin.config.ConfigManager;
 import io.papermc.paper.chat.ChatRenderer;
 import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.text.Component;
+import org.bukkit.configuration.ConfigurationSection;
 import net.kyori.adventure.text.TextReplacementConfig;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -14,6 +15,8 @@ import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
 import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
@@ -27,7 +30,6 @@ public class ChatManager {
             "(https?://[\\w\\-._~:/?#\\[\\]@!$&'()*+,;=%]+)",
             Pattern.CASE_INSENSITIVE);
 
-    private final StatusPlugin plugin;
     private final ConfigManager configManager;
     private final StatusManager statusManager;
     private final DeathTracker deathTracker;
@@ -39,16 +41,14 @@ public class ChatManager {
     private String urlStyle;
     private String urlHover;
 
-    private boolean adminColorEnabled;
-    private String adminColorStatus;
-    private String adminColor;
+    private boolean statusColorsEnabled;
+    private final Map<String, String> statusColors = new HashMap<>();
 
     public ChatManager(@NotNull StatusPlugin plugin,
             @NotNull ConfigManager configManager,
             @NotNull StatusManager statusManager,
             @NotNull DeathTracker deathTracker,
             @NotNull CountryManager countryManager) {
-        this.plugin = plugin;
         this.configManager = configManager;
         this.statusManager = statusManager;
         this.deathTracker = deathTracker;
@@ -74,10 +74,18 @@ public class ChatManager {
         String rawUrlHover = config.getString("chat.url-hover", "<gray>Click to open URL");
         urlHover = de.stylelabor.statusplugin.util.ColorUtil.convertLegacyToMiniMessage(rawUrlHover);
 
-        adminColorEnabled = config.getBoolean("chat.admin-color.enabled", false);
-        adminColorStatus = config.getString("chat.admin-color.status", "ADMIN");
-        String rawAdminColor = config.getString("chat.admin-color.color", "<red>");
-        adminColor = de.stylelabor.statusplugin.util.ColorUtil.convertLegacyToMiniMessage(rawAdminColor);
+        statusColorsEnabled = config.getBoolean("chat.status-colors.enabled", false);
+        statusColors.clear();
+        ConfigurationSection colors = config.getConfigurationSection("chat.status-colors.colors");
+        if (colors != null) {
+            for (String key : colors.getKeys(false)) {
+                String color = colors.getString(key);
+                if (color != null) {
+                    statusColors.put(key.toUpperCase(),
+                            de.stylelabor.statusplugin.util.ColorUtil.convertLegacyToMiniMessage(color));
+                }
+            }
+        }
     }
 
     /**
@@ -124,21 +132,14 @@ public class ChatManager {
                 processedMessage = makeUrlsClickable(message);
             }
 
-            // Apply admin color if enabled and status matches
-            if (adminColorEnabled && statusFormat.contains(adminColorStatus)) {
-                // We check if the status key matches.
-                // However, statusFormat is the MiniMessage string, not the key.
-                // The inner class doesn't store the raw status key, only the formatted one.
-                // We should probably check the raw status key using StatusManager.
+            // Apply status color if enabled and configured for this status
+            if (statusColorsEnabled) {
                 String rawStatus = statusManager.getStatus(player);
-                if (rawStatus != null && rawStatus.equalsIgnoreCase(adminColorStatus)) {
-                    processedMessage = processedMessage.color(miniMessage.deserialize(adminColor).color());
-                    // Or just wrap it?
-                    // If we want to force the color, we might need to be careful about existing
-                    // colors in the message.
-                    // But usually players chat without colors.
-                    // Let's try prepending the color code.
-                    processedMessage = miniMessage.deserialize(adminColor).append(processedMessage);
+                if (rawStatus != null) {
+                    String color = statusColors.get(rawStatus.toUpperCase());
+                    if (color != null) {
+                        processedMessage = miniMessage.deserialize(color).append(processedMessage);
+                    }
                 }
             }
 

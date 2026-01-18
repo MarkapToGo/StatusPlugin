@@ -42,11 +42,12 @@ chat:
   # Hover text for URLs (set to "" to disable)
   url-hover: "<gray>Click to open URL"
 
-  # Admin chat color
-  admin-color:
+  # Modular chat colors per status
+  status-colors:
     enabled: true
-    status: "ADMIN"
-    color: "<red>"
+    # <StatusID>: <Color/Format>
+    colors:
+      ADMIN: "<red>"
 
 # ==========================================
 # Tab List Settings
