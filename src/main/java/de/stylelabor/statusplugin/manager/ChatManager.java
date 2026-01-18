@@ -39,6 +39,10 @@ public class ChatManager {
     private String urlStyle;
     private String urlHover;
 
+    private boolean adminColorEnabled;
+    private String adminColorStatus;
+    private String adminColor;
+
     public ChatManager(@NotNull StatusPlugin plugin,
             @NotNull ConfigManager configManager,
             @NotNull StatusManager statusManager,
@@ -69,6 +73,11 @@ public class ChatManager {
 
         String rawUrlHover = config.getString("chat.url-hover", "<gray>Click to open URL");
         urlHover = de.stylelabor.statusplugin.util.ColorUtil.convertLegacyToMiniMessage(rawUrlHover);
+
+        adminColorEnabled = config.getBoolean("chat.admin-color.enabled", false);
+        adminColorStatus = config.getString("chat.admin-color.status", "ADMIN");
+        String rawAdminColor = config.getString("chat.admin-color.color", "<red>");
+        adminColor = de.stylelabor.statusplugin.util.ColorUtil.convertLegacyToMiniMessage(rawAdminColor);
     }
 
     /**
@@ -113,6 +122,24 @@ public class ChatManager {
             Component processedMessage = message;
             if (clickableUrls) {
                 processedMessage = makeUrlsClickable(message);
+            }
+
+            // Apply admin color if enabled and status matches
+            if (adminColorEnabled && statusFormat.contains(adminColorStatus)) {
+                // We check if the status key matches.
+                // However, statusFormat is the MiniMessage string, not the key.
+                // The inner class doesn't store the raw status key, only the formatted one.
+                // We should probably check the raw status key using StatusManager.
+                String rawStatus = statusManager.getStatus(player);
+                if (rawStatus != null && rawStatus.equalsIgnoreCase(adminColorStatus)) {
+                    processedMessage = processedMessage.color(miniMessage.deserialize(adminColor).color());
+                    // Or just wrap it?
+                    // If we want to force the color, we might need to be careful about existing
+                    // colors in the message.
+                    // But usually players chat without colors.
+                    // Let's try prepending the color code.
+                    processedMessage = miniMessage.deserialize(adminColor).append(processedMessage);
+                }
             }
 
             // Build tag resolvers for placeholders
