@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "de.stylelabor"
-version = "7.0.8"
+version = "7.0.9"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_21
