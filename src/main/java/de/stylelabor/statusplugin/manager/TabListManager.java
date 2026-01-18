@@ -13,6 +13,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.scoreboard.Scoreboard;
 import org.bukkit.scoreboard.Team;
+import org.bukkit.configuration.ConfigurationSection;
 import org.jetbrains.annotations.NotNull;
 
 import java.text.DecimalFormat;
@@ -50,6 +51,9 @@ public class TabListManager {
     // Track teams we've created for sorting
     private final Set<String> createdSortTeams = new HashSet<>();
 
+    private boolean nameColorsEnabled;
+    private final Map<String, String> nameColors = new HashMap<>();
+
     public TabListManager(@NotNull StatusPlugin plugin,
             @NotNull ConfigManager configManager,
             @NotNull StatusManager statusManager,
@@ -76,6 +80,19 @@ public class TabListManager {
 
         refreshInterval = config.getInt("tablist.refresh-interval", 5);
         sortingEnabled = config.getBoolean("tablist.sorting.enabled", true);
+
+        nameColorsEnabled = config.getBoolean("chat.name-colors.enabled", false);
+        nameColors.clear();
+        ConfigurationSection nameSection = config.getConfigurationSection("chat.name-colors.colors");
+        if (nameSection != null) {
+            for (String key : nameSection.getKeys(false)) {
+                String color = nameSection.getString(key);
+                if (color != null) {
+                    nameColors.put(key.toUpperCase(),
+                            de.stylelabor.statusplugin.util.ColorUtil.convertLegacyToMiniMessage(color));
+                }
+            }
+        }
     }
 
     /**
@@ -214,7 +231,17 @@ public class TabListManager {
             resolvers.resolver(Placeholder.component("status", Component.empty()));
         }
 
-        resolvers.resolver(Placeholder.unparsed("player", player.getName()));
+        Component playerName = Component.text(player.getName());
+        if (nameColorsEnabled) {
+            String rawStatus = statusManager.getStatus(player);
+            if (rawStatus != null) {
+                String color = nameColors.get(rawStatus.toUpperCase());
+                if (color != null) {
+                    playerName = miniMessage.deserialize(color).append(playerName);
+                }
+            }
+        }
+        resolvers.resolver(Placeholder.component("player", playerName));
         resolvers.resolver(Placeholder.unparsed("deaths", String.valueOf(deaths)));
         // Formatted deaths: [☠ N]
         resolvers.resolver(Placeholder.component("deaths_formatted",

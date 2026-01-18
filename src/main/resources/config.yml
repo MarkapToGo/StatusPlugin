@@ -49,6 +49,16 @@ chat:
     colors:
       ADMIN: "<red>"
 
+  # Modular name colors per status (for chat and tab list)
+  name-colors:
+    enabled: true
+    # <StatusID>: <Color/Format>
+    colors:
+      ADMIN: "<red>"
+      # MOD: "<green>"
+      # VIP: "<gold>"
+
+
 # ==========================================
 # Tab List Settings
 # ==========================================

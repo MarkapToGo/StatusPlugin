@@ -44,6 +44,9 @@ public class ChatManager {
     private boolean statusColorsEnabled;
     private final Map<String, String> statusColors = new HashMap<>();
 
+    private boolean nameColorsEnabled;
+    private final Map<String, String> nameColors = new HashMap<>();
+
     public ChatManager(@NotNull StatusPlugin plugin,
             @NotNull ConfigManager configManager,
             @NotNull StatusManager statusManager,
@@ -82,6 +85,19 @@ public class ChatManager {
                 String color = colors.getString(key);
                 if (color != null) {
                     statusColors.put(key.toUpperCase(),
+                            de.stylelabor.statusplugin.util.ColorUtil.convertLegacyToMiniMessage(color));
+                }
+            }
+        }
+
+        nameColorsEnabled = config.getBoolean("chat.name-colors.enabled", false);
+        nameColors.clear();
+        ConfigurationSection nameSection = config.getConfigurationSection("chat.name-colors.colors");
+        if (nameSection != null) {
+            for (String key : nameSection.getKeys(false)) {
+                String color = nameSection.getString(key);
+                if (color != null) {
+                    nameColors.put(key.toUpperCase(),
                             de.stylelabor.statusplugin.util.ColorUtil.convertLegacyToMiniMessage(color));
                 }
             }
@@ -154,7 +170,17 @@ public class ChatManager {
             }
 
             // Player name
-            resolvers.resolver(Placeholder.component("player", sourceDisplayName));
+            Component playerName = sourceDisplayName;
+            if (nameColorsEnabled) {
+                String rawStatus = statusManager.getStatus(player);
+                if (rawStatus != null) {
+                    String color = nameColors.get(rawStatus.toUpperCase());
+                    if (color != null) {
+                        playerName = miniMessage.deserialize(color).append(playerName);
+                    }
+                }
+            }
+            resolvers.resolver(Placeholder.component("player", playerName));
 
             // Message
             resolvers.resolver(Placeholder.component("message", processedMessage));
