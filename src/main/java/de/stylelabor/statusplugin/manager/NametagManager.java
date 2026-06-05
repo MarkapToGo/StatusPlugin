@@ -110,7 +110,7 @@ public class NametagManager {
         }
 
         // Add player to team
-        team.addPlayer(player);
+        team.addEntry(player.getName());
 
         plugin.debug("Updated nametag for " + player.getName() + " with team " + teamName);
     }
@@ -129,8 +129,8 @@ public class NametagManager {
         for (String teamName : new ArrayList<>(createdTeams)) {
             Team team = scoreboard.getTeam(teamName);
             if (team != null) {
-                if (team.hasPlayer(player)) {
-                    team.removePlayer(player);
+                if (team.hasEntry(player.getName())) {
+                    team.removeEntry(player.getName());
                 }
                 // Clean up empty teams
                 if (team.getSize() == 0) {

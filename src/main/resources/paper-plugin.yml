@@ -4,7 +4,7 @@ main: de.stylelabor.statusplugin.StatusPlugin
 description: Status prefix system with chat formatting, tab list, and integrations
 author: Markap
 website: https://stylelabor.de
-api-version: '1.21'
+api-version: '26.1'
 
 dependencies:
   server:

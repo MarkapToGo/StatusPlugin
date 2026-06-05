@@ -2,15 +2,15 @@ plugins {
     java
     eclipse
     idea
-    id("com.gradleup.shadow") version "9.0.0-beta6"
+    id("com.gradleup.shadow") version "9.4.1"
 }
 
 group = "de.stylelabor"
-version = "7.0.9"
+version = "7.0.10"
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
 }
 
 repositories {
@@ -24,8 +24,8 @@ repositories {
 }
 
 dependencies {
-    // Paper API (1.21+ for Brigadier command support)
-    compileOnly("io.papermc.paper:paper-api:1.21.1-R0.1-SNAPSHOT")
+    // Paper API (26.1+ for modern support)
+    compileOnly("io.papermc.paper:paper-api:26.1.2.build.+")
     
     // PlaceholderAPI
     compileOnly("me.clip:placeholderapi:2.11.5")
