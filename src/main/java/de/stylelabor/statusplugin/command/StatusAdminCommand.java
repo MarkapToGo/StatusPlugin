@@ -419,12 +419,13 @@ public final class StatusAdminCommand implements BasicCommand {
             return Collections.emptyList();
         }
 
-        if (args.length <= 1) {
-            String prefix = args.length == 1 ? args[0] : "";
-            if (!isAdmin) {
-                return filterStartsWith(List.of("reload"), prefix);
-            }
-            return filterStartsWith(SUBCOMMANDS, prefix);
+        if (args == null || args.length == 0) {
+            return isAdmin ? SUBCOMMANDS : (isReload ? List.of("reload") : Collections.emptyList());
+        }
+
+        if (args.length == 1) {
+            String prefix = args[0];
+            return isAdmin ? filterStartsWith(SUBCOMMANDS, prefix) : (isReload ? filterStartsWith(List.of("reload"), prefix) : Collections.emptyList());
         }
 
         if (!isAdmin) {

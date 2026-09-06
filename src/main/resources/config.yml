@@ -171,4 +171,7 @@ requests:
   # Minimum and maximum character length (stripped of color/formatting tags)
   min-length: 3
   max-length: 24
-
+  
+  # Recommended website for generating RGB / gradient color codes
+  # Shown in /status-suggest info. Leave empty ("") to hide this recommendation.
+  generator-website: "https://www.birdflop.com/resources/rgb/"

@@ -100,9 +100,12 @@ public class StatusCommand implements BasicCommand {
             return Collections.emptyList();
         }
 
-        // Show all statuses when no args or typing first arg
-        if (args.length <= 1) {
-            String input = args.length == 1 ? args[0].toUpperCase() : "";
+        if (args == null || args.length == 0) {
+            return statusManager.getAvailableStatuses(player);
+        }
+
+        if (args.length == 1) {
+            String input = args[0].toUpperCase();
             return statusManager.getAvailableStatuses(player).stream()
                     .filter(status -> status.toUpperCase().startsWith(input))
                     .collect(Collectors.toList());

@@ -124,6 +124,13 @@ public class StatusSuggestCommand implements BasicCommand {
                 .replace("<brackets_required>", bracketsRule);
         player.sendMessage(plugin.parseMessage(bracketsMsg));
 
+        String generatorUrl = configManager.getConfig().getString("requests.generator-website", "https://www.birdflop.com/resources/rgb/");
+        if (generatorUrl != null && !generatorUrl.trim().isEmpty()) {
+            String genMsg = configManager.getMessage("requests-info-generator")
+                    .replace("<url>", generatorUrl.trim());
+            player.sendMessage(plugin.parseMessage(genMsg));
+        }
+
         String maxStr = maxSubmits > 0 ? String.valueOf(maxSubmits) : "Unlimited";
         String limitsMsg = configManager.getMessage("requests-info-limits")
                 .replace("<pending>", String.valueOf(currentPending))
@@ -136,8 +143,11 @@ public class StatusSuggestCommand implements BasicCommand {
     @Override
     @NotNull
     public Collection<String> suggest(@NotNull CommandSourceStack stack, @NotNull String[] args) {
-        if (args.length <= 1) {
-            String prefix = args.length == 1 ? args[0].toLowerCase() : "";
+        if (args == null || args.length == 0) {
+            return List.of("info");
+        }
+        if (args.length == 1) {
+            String prefix = args[0].toLowerCase();
             if ("info".startsWith(prefix)) {
                 return List.of("info");
             }

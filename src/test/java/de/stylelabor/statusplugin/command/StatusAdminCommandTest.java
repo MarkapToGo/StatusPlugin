@@ -47,6 +47,11 @@ public class StatusAdminCommandTest {
 
         CommandSourceStack stack = createMockStack(true, false);
 
+        // When args is null
+        Collection<String> nullArgs = command.suggest(stack, null);
+        assertNotNull(nullArgs);
+        assertTrue(nullArgs.contains("set"));
+
         // When args is empty array (length 0)
         Collection<String> emptyArgs = command.suggest(stack, new String[0]);
         assertNotNull(emptyArgs);

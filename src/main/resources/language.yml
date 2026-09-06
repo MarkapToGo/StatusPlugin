@@ -47,6 +47,7 @@ messages:
   requests-info-format: "<gray>You can format statuses using <yellow>MiniMessage</yellow> or <yellow>Legacy Color Codes</yellow>."
   requests-info-example-minimessage: "<gray> • MiniMessage: <white><gradient:#65FF64:#65FF64>[TEST]</gradient></white> → <gradient:#65FF64:#65FF64>[TEST]</gradient>"
   requests-info-example-legacy: "<gray> • Legacy Hex: <white>&x&6&5&F&F&6&4[TEST]</white> → <#65FF64>[TEST]</#65FF64>"
+  requests-info-generator: "<gray> • Color generator: <click:open_url:'<url>'><hover:show_text:'<green>Click to open website</green>'><aqua><u><url></u></aqua></hover></click>"
   requests-info-brackets: "<gray> • Corner brackets required: <white><brackets_required></white> (must start with [ and end with ])"
   requests-info-limits: "<gray> • Your pending submissions: <white><pending>/<max></white>"
   requests-info-command: "<gray>Submit your suggestion: <yellow>/status-suggest <format></yellow>"
