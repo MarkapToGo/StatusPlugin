@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [7.1.1] - 2026-09-06
+
+### Added
+- Recommended color code generator website setting (`requests.generator-website`) in `config.yml` (default: `https://www.birdflop.com/resources/rgb/`), shown with an interactive clickable link in `/status-suggest info` (hidden if set to empty).
+- Dedicated aliases for commands: `/statusadmin`, `/statussuggest`, `/statusclear`, `/statuspreview`, and `/st`.
+- Automated unit test suite in `StatusAdminCommandTest`.
+
+### Fixed
+- Fixed `ArrayIndexOutOfBoundsException` when tab-completing `/status-admin` with empty or null argument arrays.
+- Fixed format examples in `/status-suggest info` translating the syntax code on the left into color instead of showing literal tags.
+- Hardened all command suggestion handlers against empty or null arguments.
+
+---
+
 ## [7.1] - 2026-09-06
 
 ### Added
