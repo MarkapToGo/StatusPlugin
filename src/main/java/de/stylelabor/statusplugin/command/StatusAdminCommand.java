@@ -32,7 +32,7 @@ import java.util.stream.Collectors;
 @SuppressWarnings("UnstableApiUsage")
 public final class StatusAdminCommand implements BasicCommand {
 
-    private static final List<String> SUBCOMMANDS = Arrays.asList("set", "reload", "deaths", "requests");
+    private static final List<String> SUBCOMMANDS = Arrays.asList("set", "reload", "deaths", "requests", "help");
     private static final List<String> DEATH_ACTIONS = Arrays.asList("view", "add", "remove", "set", "reset");
     private static final List<String> REQUEST_ACTIONS = Arrays.asList("list", "accept", "deny");
 
@@ -88,6 +88,7 @@ public final class StatusAdminCommand implements BasicCommand {
             case "set" -> handleSet(sender, args);
             case "deaths" -> handleDeaths(sender, args);
             case "requests" -> handleRequests(sender, args);
+            case "help" -> showUsage(sender);
             default -> showUsage(sender);
         }
     }
@@ -402,26 +403,32 @@ public final class StatusAdminCommand implements BasicCommand {
     }
 
     @Override
+    public boolean canUse(@NotNull CommandSender sender) {
+        return sender.hasPermission("statusplugin.admin") || sender.hasPermission("statusplugin.reload") || sender.isOp();
+    }
+
+    @Override
     @NotNull
     public Collection<String> suggest(@NotNull CommandSourceStack stack, @NotNull String[] args) {
         CommandSender sender = stack.getSender();
 
-        boolean isAdmin = sender.hasPermission("statusplugin.admin");
-        boolean isReload = sender.hasPermission("statusplugin.reload");
+        boolean isAdmin = sender.hasPermission("statusplugin.admin") || sender.isOp();
+        boolean isReload = sender.hasPermission("statusplugin.reload") || sender.isOp();
 
         if (!isAdmin && !isReload) {
             return Collections.emptyList();
         }
 
-        if (!isAdmin) {
-            if (args.length <= 1) {
-                return filterStartsWith(List.of("reload"), args.length == 1 ? args[0] : "");
+        if (args.length <= 1) {
+            String prefix = args.length == 1 ? args[0] : "";
+            if (!isAdmin) {
+                return filterStartsWith(List.of("reload"), prefix);
             }
-            return Collections.emptyList();
+            return filterStartsWith(SUBCOMMANDS, prefix);
         }
 
-        if (args.length == 1) {
-            return filterStartsWith(SUBCOMMANDS, args[0]);
+        if (!isAdmin) {
+            return Collections.emptyList();
         }
 
         String subCommand = args[0].toLowerCase();
@@ -450,10 +457,27 @@ public final class StatusAdminCommand implements BasicCommand {
             }
         }
 
-        if (args.length == 4 && subCommand.equals("deaths")) {
-            String action = args[2].toLowerCase();
-            if (action.equals("add") || action.equals("remove") || action.equals("set")) {
-                return filterStartsWith(List.of("1", "5", "10", "50", "100"), args[3]);
+        if (args.length == 4) {
+            if (subCommand.equals("deaths")) {
+                String action = args[2].toLowerCase();
+                if (action.equals("add") || action.equals("remove") || action.equals("set")) {
+                    return filterStartsWith(List.of("1", "5", "10", "50", "100"), args[3]);
+                }
+            }
+            if (subCommand.equals("requests")) {
+                if (args[1].equalsIgnoreCase("deny")) {
+                    return filterStartsWith(List.of("Inappropriate", "Format_error", "Color_rules", "Duplicate"), args[3]);
+                }
+                if (args[1].equalsIgnoreCase("accept")) {
+                    var req = requestManager.getRequest(args[2].toUpperCase());
+                    if (req != null) {
+                        String clean = de.stylelabor.statusplugin.util.ColorUtil.stripFormatting(req.rawInput())
+                                .replaceAll("[^A-Za-z0-9_]", "").toUpperCase();
+                        if (!clean.isEmpty()) {
+                            return filterStartsWith(List.of(clean), args[3]);
+                        }
+                    }
+                }
             }
         }
 

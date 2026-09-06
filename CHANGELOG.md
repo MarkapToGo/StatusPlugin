@@ -42,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added HTTP resource disposal (`OkHttpClient` connection pool & dispatcher cleanup) in `VersionChecker.shutdown()`.
 
 ### Fixed
+- Fixed `/status-admin` tab completion throwing out-of-bounds exception on empty arguments.
+- Ensured all `/status-admin` subcommands (`set`, `reload`, `deaths`, `requests`, `help`) and arguments properly tab-complete.
 - Fixed integer overflow potential with rotating tab list index (`rotatingIndex.get() & Integer.MAX_VALUE`).
 - Fixed duplicate read timeout initialization in `VersionChecker`.
 - Fixed tab list list-name async invocation warning by checking `Bukkit.isPrimaryThread()`.

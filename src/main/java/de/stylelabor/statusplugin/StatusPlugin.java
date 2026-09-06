@@ -25,6 +25,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.List;
 import java.util.logging.Level;
 
 /**
@@ -170,19 +171,19 @@ public class StatusPlugin extends JavaPlugin {
             var statusAdminCommand = new StatusAdminCommand(this, statusManager, deathTracker, configManager, requestManager);
 
             // Register /status command
-            commands.register("status", "View or set your status", statusCommand);
+            commands.register("status", "View or set your status", List.of("st"), statusCommand);
 
             // Register /status-clear command
-            commands.register("status-clear", "Clear your status", statusClearCommand);
+            commands.register("status-clear", "Clear your status", List.of("statusclear"), statusClearCommand);
 
             // Register /status-preview command
-            commands.register("status-preview", "Preview how a status looks in chat", statusPreviewCommand);
+            commands.register("status-preview", "Preview how a status looks in chat", List.of("statuspreview"), statusPreviewCommand);
 
             // Register /status-suggest command
-            commands.register("status-suggest", "Suggest a new status", statusSuggestCommand);
+            commands.register("status-suggest", "Suggest a new status", List.of("statussuggest"), statusSuggestCommand);
 
             // Register /status-admin command
-            commands.register("status-admin", "Admin commands for StatusPlugin", statusAdminCommand);
+            commands.register("status-admin", "Admin commands for StatusPlugin", List.of("statusadmin"), statusAdminCommand);
         });
     }
 
