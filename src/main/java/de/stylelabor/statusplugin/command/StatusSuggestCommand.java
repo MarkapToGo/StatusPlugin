@@ -138,10 +138,9 @@ public class StatusSuggestCommand implements BasicCommand {
     public Collection<String> suggest(@NotNull CommandSourceStack stack, @NotNull String[] args) {
         if (args.length <= 1) {
             String prefix = args.length == 1 ? args[0].toLowerCase() : "";
-            List<String> suggestions = List.of("info", "[STATUS]", "<gradient:#65FF64:#65FF64>[TEST]</gradient>", "&x&6&5&F&F&6&4[TEST]");
-            return suggestions.stream()
-                    .filter(s -> s.toLowerCase().startsWith(prefix))
-                    .collect(Collectors.toList());
+            if ("info".startsWith(prefix)) {
+                return List.of("info");
+            }
         }
         return Collections.emptyList();
     }
