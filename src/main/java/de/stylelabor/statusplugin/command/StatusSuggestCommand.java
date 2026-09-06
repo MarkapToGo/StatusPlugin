@@ -116,8 +116,44 @@ public class StatusSuggestCommand implements BasicCommand {
 
         player.sendMessage(plugin.parseMessage(configManager.getMessage("requests-info-header")));
         player.sendMessage(plugin.parseMessage(configManager.getMessage("requests-info-format")));
-        player.sendMessage(plugin.parseMessage(configManager.getMessage("requests-info-example-minimessage")));
-        player.sendMessage(plugin.parseMessage(configManager.getMessage("requests-info-example-legacy")));
+
+        // MiniMessage example line: show literal code on left, colored preview on right
+        String mmTemplate = configManager.getMessage("requests-info-example-minimessage");
+        String mmCode = "<gradient:#65FF64:#65FF64>[TEST]</gradient>";
+        Component mmPreview = plugin.parseMessage(mmCode);
+
+        if (!mmTemplate.contains("<code_mm>") && !mmTemplate.contains("<code>")) {
+            mmTemplate = mmTemplate.replace("<white><gradient:#65FF64:#65FF64>[TEST]</gradient></white>", "<white><code_mm></white>")
+                                   .replace("<white>&x&6&5&F&F&6&4[TEST]</white>", "<white><code_mm></white>")
+                                   .replace("<gradient:#65FF64:#65FF64>[TEST]</gradient>", "<preview_mm>");
+        }
+
+        player.sendMessage(plugin.getMiniMessage().deserialize(
+                mmTemplate,
+                Placeholder.unparsed("code_mm", mmCode),
+                Placeholder.unparsed("code", mmCode),
+                Placeholder.component("preview_mm", mmPreview),
+                Placeholder.component("preview", mmPreview)
+        ));
+
+        // Legacy hex example line: show literal code on left, colored preview on right
+        String legacyTemplate = configManager.getMessage("requests-info-example-legacy");
+        String legacyCode = "&x&6&5&F&F&6&4[TEST]";
+        Component legacyPreview = plugin.parseMessage(legacyCode);
+
+        if (!legacyTemplate.contains("<code_legacy>") && !legacyTemplate.contains("<code>")) {
+            legacyTemplate = legacyTemplate.replace("<white>&x&6&5&F&F&6&4[TEST]</white>", "<white><code_legacy></white>")
+                                           .replace("&x&6&5&F&F&6&4[TEST]", "<code_legacy>")
+                                           .replace("<#65FF64>[TEST]</#65FF64>", "<preview_legacy>");
+        }
+
+        player.sendMessage(plugin.getMiniMessage().deserialize(
+                legacyTemplate,
+                Placeholder.unparsed("code_legacy", legacyCode),
+                Placeholder.unparsed("code", legacyCode),
+                Placeholder.component("preview_legacy", legacyPreview),
+                Placeholder.component("preview", legacyPreview)
+        ));
 
         String bracketsRule = requireBrackets ? "<green>Yes</green>" : "<yellow>No</yellow>";
         String bracketsMsg = configManager.getMessage("requests-info-brackets")

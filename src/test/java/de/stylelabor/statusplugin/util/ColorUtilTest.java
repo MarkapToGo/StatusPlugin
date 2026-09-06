@@ -127,4 +127,34 @@ public class ColorUtilTest {
         safeIndex = (minInt & Integer.MAX_VALUE) % listSize;
         assertTrue(safeIndex >= 0 && safeIndex < listSize);
     }
+
+    @Test
+    public void testInfoExampleUnparsedMiniMessage() {
+        var mm = net.kyori.adventure.text.minimessage.MiniMessage.miniMessage();
+        String template = "<gray> • MiniMessage: <white><code_mm></white> → <preview_mm>";
+        String code = "<gradient:#65FF64:#65FF64>[TEST]</gradient>";
+        Component comp = mm.deserialize(
+                template,
+                net.kyori.adventure.text.minimessage.tag.resolver.Placeholder.unparsed("code_mm", code),
+                net.kyori.adventure.text.minimessage.tag.resolver.Placeholder.component("preview_mm", ColorUtil.parse(code))
+        );
+
+        String plain = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(comp);
+        assertEquals(" • MiniMessage: <gradient:#65FF64:#65FF64>[TEST]</gradient> → [TEST]", plain);
+    }
+
+    @Test
+    public void testInfoExampleUnparsedLegacy() {
+        var mm = net.kyori.adventure.text.minimessage.MiniMessage.miniMessage();
+        String template = "<gray> • Legacy Hex: <white><code_legacy></white> → <preview_legacy>";
+        String code = "&x&6&5&F&F&6&4[TEST]";
+        Component comp = mm.deserialize(
+                template,
+                net.kyori.adventure.text.minimessage.tag.resolver.Placeholder.unparsed("code_legacy", code),
+                net.kyori.adventure.text.minimessage.tag.resolver.Placeholder.component("preview_legacy", ColorUtil.parse(code))
+        );
+
+        String plain = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(comp);
+        assertEquals(" • Legacy Hex: &x&6&5&F&F&6&4[TEST] → [TEST]", plain);
+    }
 }
