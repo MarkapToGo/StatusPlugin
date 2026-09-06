@@ -137,13 +137,21 @@ public final class RequestManager {
      */
     public synchronized StatusRequest submitRequest(@NotNull Player player, @NotNull String rawInput) {
         String id = "REQ-" + idCounter++;
-        String formatted = ColorUtil.convertLegacyToMiniMessage(rawInput);
+        String trimmed = rawInput.trim();
+        boolean appendClear = configManager.getConfig().getBoolean("requests.append-clear-color",
+                configManager.getConfig().getBoolean("requests.clear-color-at-end",
+                        configManager.getConfig().getBoolean("requests.append-reset-color", true)));
+
+        String formatted = ColorUtil.convertLegacyToMiniMessage(trimmed);
+        if (appendClear) {
+            formatted = ColorUtil.ensureResetAtEnd(formatted);
+        }
 
         StatusRequest req = new StatusRequest(
                 id,
                 player.getUniqueId(),
                 player.getName(),
-                rawInput,
+                trimmed,
                 formatted,
                 System.currentTimeMillis(),
                 RequestStatus.PENDING,
@@ -216,8 +224,17 @@ public final class RequestManager {
         requests.put(req.id(), updated);
         saveData();
 
+        boolean appendClear = configManager.getConfig().getBoolean("requests.append-clear-color",
+                configManager.getConfig().getBoolean("requests.clear-color-at-end",
+                        configManager.getConfig().getBoolean("requests.append-reset-color", true)));
+
+        String finalStatusFormat = req.formattedStatus();
+        if (appendClear) {
+            finalStatusFormat = ColorUtil.ensureResetAtEnd(finalStatusFormat);
+        }
+
         // Save into status-options.yml and reload status manager
-        configManager.addStatusOption(key, req.formattedStatus());
+        configManager.addStatusOption(key, finalStatusFormat);
         statusManager.reload();
 
         return key;

@@ -49,6 +49,7 @@ messages:
   requests-info-example-legacy: "<gray> • Legacy Hex: <white><code_legacy></white> → <preview_legacy>"
   requests-info-generator: "<gray> • Color generator: <click:open_url:'<url>'><hover:show_text:'<green>Click to open website</green>'><aqua><u><url></u></aqua></hover></click>"
   requests-info-brackets: "<gray> • Corner brackets required: <white><brackets_required></white> (must start with [ and end with ])"
+  requests-info-clear-color: "<gray> • Clear color at end: <white><clear_color_enabled></white>"
   requests-info-limits: "<gray> • Your pending submissions: <white><pending>/<max></white>"
   requests-info-command: "<gray>Submit your suggestion: <yellow>/status-suggest <format></yellow>"
   requests-submitted: "<prefix><green>Your status suggestion <status_display><green> was submitted! (ID: <white><id></white>)"

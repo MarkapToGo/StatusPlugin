@@ -175,3 +175,7 @@ requests:
   # Recommended website for generating RGB / gradient color codes
   # Shown in /status-suggest info. Leave empty ("") to hide this recommendation.
   generator-website: "https://www.birdflop.com/resources/rgb/"
+
+  # Automatically append a clear color code (<reset>) at the end of suggested statuses
+  # Ensures the player's name does not inherit the status color in chat, tablist, and nametag
+  append-clear-color: true

@@ -178,5 +178,30 @@ public final class ColorUtil {
                     .replaceAll("&[0-9a-fk-orA-FK-OR]", "");
         }
     }
+
+    /**
+     * Check if text ends with a reset tag or legacy reset code
+     */
+    public static boolean hasResetAtEnd(@NotNull String text) {
+        String trimmed = text.trim();
+        return trimmed.endsWith("<reset>")
+                || trimmed.endsWith("<r>")
+                || trimmed.endsWith("</reset>")
+                || trimmed.endsWith("&r")
+                || trimmed.endsWith("&R")
+                || trimmed.endsWith("§r")
+                || trimmed.endsWith("§R");
+    }
+
+    /**
+     * Ensure text ends with a clear color / reset tag (<reset>)
+     */
+    @NotNull
+    public static String ensureResetAtEnd(@NotNull String text) {
+        if (hasResetAtEnd(text)) {
+            return text;
+        }
+        return text + "<reset>";
+    }
 }
 

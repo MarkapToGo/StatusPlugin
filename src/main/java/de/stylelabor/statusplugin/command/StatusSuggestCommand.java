@@ -160,6 +160,14 @@ public class StatusSuggestCommand implements BasicCommand {
                 .replace("<brackets_required>", bracketsRule);
         player.sendMessage(plugin.parseMessage(bracketsMsg));
 
+        boolean appendClear = configManager.getConfig().getBoolean("requests.append-clear-color",
+                configManager.getConfig().getBoolean("requests.clear-color-at-end",
+                        configManager.getConfig().getBoolean("requests.append-reset-color", true)));
+        String clearRule = appendClear ? "<green>Yes</green>" : "<yellow>No</yellow>";
+        String clearMsg = configManager.getMessage("requests-info-clear-color")
+                .replace("<clear_color_enabled>", clearRule);
+        player.sendMessage(plugin.parseMessage(clearMsg));
+
         String generatorUrl = configManager.getConfig().getString("requests.generator-website", "https://www.birdflop.com/resources/rgb/");
         if (generatorUrl != null && !generatorUrl.trim().isEmpty()) {
             String genMsg = configManager.getMessage("requests-info-generator")

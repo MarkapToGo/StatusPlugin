@@ -157,4 +157,19 @@ public class ColorUtilTest {
         String plain = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(comp);
         assertEquals(" • Legacy Hex: &x&6&5&F&F&6&4[TEST] → [TEST]", plain);
     }
+
+    @Test
+    public void testHasResetAtEndAndEnsureReset() {
+        assertTrue(ColorUtil.hasResetAtEnd("[TEST]<reset>"));
+        assertTrue(ColorUtil.hasResetAtEnd("[TEST]<r>"));
+        assertTrue(ColorUtil.hasResetAtEnd("[TEST]&r"));
+        assertTrue(ColorUtil.hasResetAtEnd("[TEST]§r"));
+        assertFalse(ColorUtil.hasResetAtEnd("[TEST]"));
+        assertFalse(ColorUtil.hasResetAtEnd("<#65FF64>[TEST]"));
+
+        assertEquals("[TEST]<reset>", ColorUtil.ensureResetAtEnd("[TEST]"));
+        assertEquals("[TEST]<reset>", ColorUtil.ensureResetAtEnd("[TEST]<reset>"));
+        assertEquals("&x&6&5&F&F&6&4[TEST]<reset>", ColorUtil.ensureResetAtEnd("&x&6&5&F&F&6&4[TEST]"));
+        assertEquals("&x&6&5&F&F&6&4[TEST]&r", ColorUtil.ensureResetAtEnd("&x&6&5&F&F&6&4[TEST]&r"));
+    }
 }
