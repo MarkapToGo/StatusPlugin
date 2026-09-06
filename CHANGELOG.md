@@ -7,11 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [7.1.2] - 2026-09-06
+
+### Added
+- New setting `requests.append-clear-color` (default: `true`) to automatically append a clear color code (`<reset>`) at the end of suggested statuses, ensuring the player's name does not inherit the status color in chat or tablist/nametag.
+
+---
+
 ## [7.1.1] - 2026-09-06
 
 ### Added
 - Recommended color code generator website setting (`requests.generator-website`) in `config.yml` (default: `https://www.birdflop.com/resources/rgb/`), shown with an interactive clickable link in `/status-suggest info` (hidden if set to empty).
-- New setting `requests.append-clear-color` (default: `true`) to automatically append a clear color code (`<reset>`) at the end of suggested statuses, ensuring the player's name does not inherit the status color in chat or tablist/nametag.
 - Dedicated aliases for commands: `/statusadmin`, `/statussuggest`, `/statusclear`, `/statuspreview`, and `/st`.
 - Automated unit test suite in `StatusAdminCommandTest`.
 
