@@ -16,10 +16,11 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * Tracks player deaths with batched saves and vanilla statistic sync.
  */
-public class DeathTracker {
+public final class DeathTracker {
 
     private final StatusPlugin plugin;
     private final ConfigManager configManager;
+    private final Object saveLock = new Object();
 
     // Cache of player deaths (UUID -> death count)
     private final Map<UUID, Integer> playerDeaths = new ConcurrentHashMap<>();
@@ -41,7 +42,6 @@ public class DeathTracker {
         this.configManager = configManager;
         loadConfig();
         loadData();
-        startSaveTask();
     }
 
     /**
@@ -64,29 +64,31 @@ public class DeathTracker {
      * Load death data from file
      */
     private void loadData() {
-        playerDeaths.clear();
+        synchronized (saveLock) {
+            playerDeaths.clear();
 
-        var deathsConfig = configManager.getPlayerDeaths();
-        for (String uuidString : deathsConfig.getKeys(false)) {
-            try {
-                UUID uuid = UUID.fromString(uuidString);
-                int deaths = deathsConfig.getInt(uuidString);
-                playerDeaths.put(uuid, deaths);
-            } catch (IllegalArgumentException e) {
-                plugin.debug("Invalid UUID in player-deaths.yml: " + uuidString);
+            var deathsConfig = configManager.getPlayerDeaths();
+            for (String uuidString : deathsConfig.getKeys(false)) {
+                try {
+                    UUID uuid = UUID.fromString(uuidString);
+                    int deaths = deathsConfig.getInt(uuidString);
+                    playerDeaths.put(uuid, deaths);
+                } catch (IllegalArgumentException e) {
+                    plugin.debug("Invalid UUID in player-deaths.yml: " + uuidString);
+                }
             }
+
+            // Load total deaths
+            totalDeaths.set(configManager.getServerStats().getLong("total-deaths", 0));
+
+            plugin.debug("Loaded deaths for " + playerDeaths.size() + " players, total: " + totalDeaths.get());
         }
-
-        // Load total deaths
-        totalDeaths.set(configManager.getServerStats().getLong("total-deaths", 0));
-
-        plugin.debug("Loaded deaths for " + playerDeaths.size() + " players, total: " + totalDeaths.get());
     }
 
     /**
      * Start the periodic save task
      */
-    private void startSaveTask() {
+    public void startSaveTask() {
         if (saveDelay <= 0)
             return;
 
@@ -102,26 +104,28 @@ public class DeathTracker {
      * Save death data
      */
     public void saveData() {
-        var deathsConfig = configManager.getPlayerDeaths();
+        synchronized (saveLock) {
+            var deathsConfig = configManager.getPlayerDeaths();
 
-        // Clear existing data
-        for (String key : deathsConfig.getKeys(false)) {
-            deathsConfig.set(key, null);
+            // Clear existing data
+            for (String key : deathsConfig.getKeys(false)) {
+                deathsConfig.set(key, null);
+            }
+
+            // Save current data
+            for (Map.Entry<UUID, Integer> entry : playerDeaths.entrySet()) {
+                deathsConfig.set(entry.getKey().toString(), entry.getValue());
+            }
+
+            configManager.savePlayerDeaths();
+
+            // Save total deaths
+            var serverStats = configManager.getServerStats();
+            serverStats.set("total-deaths", totalDeaths.get());
+            configManager.saveServerStats();
+
+            plugin.debug("Saved deaths for " + playerDeaths.size() + " players");
         }
-
-        // Save current data
-        for (Map.Entry<UUID, Integer> entry : playerDeaths.entrySet()) {
-            deathsConfig.set(entry.getKey().toString(), entry.getValue());
-        }
-
-        configManager.savePlayerDeaths();
-
-        // Save total deaths
-        var serverStats = configManager.getServerStats();
-        serverStats.set("total-deaths", totalDeaths.get());
-        configManager.saveServerStats();
-
-        plugin.debug("Saved deaths for " + playerDeaths.size() + " players");
     }
 
     /**

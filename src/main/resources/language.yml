@@ -41,6 +41,34 @@ messages:
   update-available: "<prefix><yellow>A new version (<white><version></white>) is available on Modrinth!"
   update-link: "<click:open_url:'https://modrinth.com/plugin/statusplugin'><aqua>[Click here to download]</aqua></click>"
 
+  # Status Suggestions / Requests
+  requests-disabled: "<prefix><red>Status suggestions are currently disabled."
+  requests-info-header: "<prefix><gold><bold>Status Suggestion Info</bold></gold>"
+  requests-info-format: "<gray>You can format statuses using <yellow>MiniMessage</yellow> or <yellow>Legacy Color Codes</yellow>."
+  requests-info-example-minimessage: "<gray> • MiniMessage: <white><gradient:#65FF64:#65FF64>[TEST]</gradient></white> → <gradient:#65FF64:#65FF64>[TEST]</gradient>"
+  requests-info-example-legacy: "<gray> • Legacy Hex: <white>&x&6&5&F&F&6&4[TEST]</white> → <#65FF64>[TEST]</#65FF64>"
+  requests-info-brackets: "<gray> • Corner brackets required: <white><brackets_required></white> (must start with [ and end with ])"
+  requests-info-limits: "<gray> • Your pending submissions: <white><pending>/<max></white>"
+  requests-info-command: "<gray>Submit your suggestion: <yellow>/status-suggest <format></yellow>"
+  requests-submitted: "<prefix><green>Your status suggestion <status_display><green> was submitted! (ID: <white><id></white>)"
+  requests-limit-reached: "<prefix><red>You have reached the maximum pending suggestions limit (<white><max></white>). Please wait for an admin to review your pending requests."
+  requests-brackets-required: "<prefix><red>Your status must start with <white>[</white> and end with <white>]</white> corner brackets! Example: <white>[TEST]</white>"
+  requests-invalid-format: "<prefix><red>Invalid formatting syntax! Check <white>/status-suggest info</white> for help."
+  requests-length-invalid: "<prefix><red>Status text must be between <white><min></white> and <white><max></white> characters."
+  admin-requests-list-empty: "<prefix><gray>There are no pending status requests."
+  admin-requests-list-header: "<prefix><gold><bold>Pending Status Requests (<count>):</bold></gold>"
+  admin-requests-list-item: "<gray>[<white><id></white>] <yellow><player></yellow>: <status_display> <gray>(<white><raw></white>)</gray>"
+  admin-requests-accepted: "<prefix><green>Request <white><id></white> accepted! Status <white><key></white> is now available."
+  admin-requests-denied: "<prefix><yellow>Request <white><id></white> has been denied."
+  admin-requests-not-found: "<prefix><red>Request <white><id></white> was not found."
+  admin-requests-name-required: "<prefix><red>Please specify a status name: <white>/status-admin requests accept <id> <name></white>"
+  admin-requests-reason-required: "<prefix><red>Please specify a reason: <white>/status-admin requests deny <id> <reason></white>"
+  admin-requests-name-invalid: "<prefix><red>Invalid status name! Use letters, numbers, and underscores only."
+  admin-requests-name-exists: "<prefix><red>A status with the name <white><key></white> already exists!"
+  requests-notify-accepted: "<prefix><green>Your status suggestion <status_display><green> was accepted with name <white><key></white>! You can now use it."
+  requests-notify-denied: "<prefix><red>Your status suggestion <status_display><red> was denied.<newline><prefix><gray>Reason: <white><reason></white>"
+
+
 # ==========================================
 # LibertyBans Integration
 # ==========================================

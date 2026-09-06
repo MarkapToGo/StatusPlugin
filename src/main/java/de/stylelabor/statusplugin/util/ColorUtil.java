@@ -47,9 +47,10 @@ public final class ColorUtil {
      * Check if text contains legacy color codes
      */
     public static boolean containsLegacyCodes(@NotNull String text) {
-        return LEGACY_PATTERN.matcher(text).find() ||
-                HEX_PATTERN.matcher(text).find() ||
-                BUKKIT_HEX_PATTERN.matcher(text).find();
+        String normalized = text.replace('§', '&');
+        return LEGACY_PATTERN.matcher(normalized).find() ||
+                HEX_PATTERN.matcher(normalized).find() ||
+                BUKKIT_HEX_PATTERN.matcher(normalized).find();
     }
 
     /**
@@ -57,6 +58,7 @@ public final class ColorUtil {
      */
     @NotNull
     public static String convertLegacyToMiniMessage(@NotNull String text) {
+        text = text.replace('§', '&');
         // Convert &#RRGGBB to <#RRGGBB>
         Matcher hexMatcher = HEX_PATTERN.matcher(text);
         StringBuilder result = new StringBuilder();
@@ -133,12 +135,48 @@ public final class ColorUtil {
     }
 
     /**
+     * Safely validate whether a text containing MiniMessage or legacy codes can be parsed.
+     */
+    public static boolean isValidFormat(@NotNull String text) {
+        if (text.isBlank()) {
+            return false;
+        }
+        try {
+            parse(text);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Check if the stripped text starts with '[' and ends with ']'.
+     */
+    public static boolean hasCornerBrackets(@NotNull String text) {
+        try {
+            String stripped = stripFormatting(text).trim();
+            return stripped.startsWith("[") && stripped.endsWith("]") && stripped.length() >= 2;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
      * Strip all color and formatting from a string
      */
     @NotNull
     public static String stripFormatting(@NotNull String text) {
-        Component component = parse(text);
-        return net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
-                .plainText().serialize(component);
+        try {
+            Component component = parse(text);
+            return net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
+                    .plainText().serialize(component);
+        } catch (Exception e) {
+            // Fallback regex strip
+            return text.replace('§', '&')
+                    .replaceAll("<[^>]*>", "")
+                    .replaceAll("&x(&[0-9a-fA-F]){6}", "")
+                    .replaceAll("&[0-9a-fk-orA-FK-OR]", "");
+        }
     }
 }
+

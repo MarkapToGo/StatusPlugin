@@ -14,7 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Manages player statuses and their persistence.
  */
-public class StatusManager {
+public final class StatusManager {
 
     private final StatusPlugin plugin;
     private final ConfigManager configManager;
@@ -88,8 +88,8 @@ public class StatusManager {
             try {
                 UUID uuid = UUID.fromString(uuidString);
                 String status = playerStatusConfig.getString(uuidString);
-                if (status != null && !status.isEmpty()) {
-                    playerStatuses.put(uuid, status.toUpperCase());
+                if (status != null) {
+                    playerStatuses.put(uuid, status.trim().toUpperCase());
                 }
             } catch (IllegalArgumentException e) {
                 plugin.debug("Invalid UUID in player-status.yml: " + uuidString);
@@ -132,7 +132,8 @@ public class StatusManager {
      */
     @Nullable
     public String getStatus(@NotNull UUID uuid) {
-        return playerStatuses.get(uuid);
+        String status = playerStatuses.get(uuid);
+        return (status == null || status.isEmpty()) ? null : status;
     }
 
     /**
@@ -200,10 +201,10 @@ public class StatusManager {
     /**
      * Clear a player's status
      */
-    public void clearStatus(@NotNull UUID uuid) {
-        playerStatuses.remove(uuid);
-        saveData();
-    }
+     public void clearStatus(@NotNull UUID uuid) {
+         playerStatuses.put(uuid, "");
+         saveData();
+     }
 
     /**
      * Clear a player's status
@@ -261,9 +262,6 @@ public class StatusManager {
         return statusOptions.getOrDefault(statusKey.toUpperCase(), "");
     }
 
-    /**
-     * Get status priority for sorting (lower = higher priority)
-     */
     /**
      * Get status priority for sorting (lower = higher priority)
      * Handles specific order: Configured -> _OTHER_ (Undefined) ->

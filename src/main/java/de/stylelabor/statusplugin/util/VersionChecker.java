@@ -24,7 +24,6 @@ public final class VersionChecker {
     private static final OkHttpClient HTTP_CLIENT = new OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(10, TimeUnit.SECONDS)
             .build();
 
     private static String latestVersion = null;
@@ -85,7 +84,7 @@ public final class VersionChecker {
                     latestVersion = version;
                     updateAvailable = isNewer(currentVersion, version);
 
-                    callback.accept(version, url);
+                    callback.accept(version, downloadUrl);
                 }
             } catch (IOException e) {
                 plugin.debug("Failed to check for updates: " + e.getMessage());
@@ -93,6 +92,20 @@ public final class VersionChecker {
                 plugin.log(Level.WARNING, "Error parsing update response: " + e.getMessage());
             }
         });
+    }
+
+    /**
+     * Shutdown HTTP client resources
+     */
+    public static void shutdown() {
+        HTTP_CLIENT.dispatcher().executorService().shutdown();
+        HTTP_CLIENT.connectionPool().evictAll();
+        if (HTTP_CLIENT.cache() != null) {
+            try {
+                HTTP_CLIENT.cache().close();
+            } catch (IOException ignored) {
+            }
+        }
     }
 
     /**

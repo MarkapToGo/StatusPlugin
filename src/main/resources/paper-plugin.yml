@@ -4,7 +4,7 @@ main: de.stylelabor.statusplugin.StatusPlugin
 description: Status prefix system with chat formatting, tab list, and integrations
 author: Markap
 website: https://stylelabor.de
-api-version: '26.1'
+api-version: '26.2'
 
 dependencies:
   server:
@@ -20,3 +20,17 @@ dependencies:
       load: BEFORE
       required: false
       join-classpath: true
+
+permissions:
+  statusplugin.admin:
+    description: Full administration access for StatusPlugin
+    default: op
+    children:
+      statusplugin.reload: true
+      statusplugin.mod: true
+  statusplugin.reload:
+    description: Permission to reload StatusPlugin configuration
+    default: op
+  statusplugin.mod:
+    description: Permission to use the MOD status
+    default: op

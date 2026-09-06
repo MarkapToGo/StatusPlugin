@@ -23,7 +23,7 @@ import java.util.logging.Level;
 /**
  * Manages country lookup via IP geolocation with async fetching and caching.
  */
-public class CountryManager {
+public final class CountryManager {
 
     private static final String PRIMARY_API = "http://ip-api.com/json/%s?fields=status,country,countryCode";
     private static final String FALLBACK_API = "https://api.iplocation.net/?ip=%s";
@@ -54,7 +54,7 @@ public class CountryManager {
     /**
      * Check if country lookup is enabled
      */
-    public boolean isEnabled() {
+    public final boolean isEnabled() {
         return configManager.getConfig().getBoolean("country.enabled", false);
     }
 
@@ -259,5 +259,19 @@ public class CountryManager {
     public void reload() {
         countryCache.clear();
         loadCache();
+    }
+
+    /**
+     * Shutdown HTTP client resources
+     */
+    public void shutdown() {
+        httpClient.dispatcher().executorService().shutdown();
+        httpClient.connectionPool().evictAll();
+        if (httpClient.cache() != null) {
+            try {
+                httpClient.cache().close();
+            } catch (IOException ignored) {
+            }
+        }
     }
 }

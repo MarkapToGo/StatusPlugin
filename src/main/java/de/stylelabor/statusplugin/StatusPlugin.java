@@ -4,6 +4,7 @@ import de.stylelabor.statusplugin.command.StatusAdminCommand;
 import de.stylelabor.statusplugin.command.StatusClearCommand;
 import de.stylelabor.statusplugin.command.StatusCommand;
 import de.stylelabor.statusplugin.command.StatusPreviewCommand;
+import de.stylelabor.statusplugin.command.StatusSuggestCommand;
 import de.stylelabor.statusplugin.config.ConfigManager;
 import de.stylelabor.statusplugin.integration.LibertyBansIntegration;
 import de.stylelabor.statusplugin.integration.PlaceholderAPIExpansion;
@@ -43,6 +44,7 @@ public class StatusPlugin extends JavaPlugin {
     private NametagManager nametagManager;
     private DeathTracker deathTracker;
     private CountryManager countryManager;
+    private RequestManager requestManager;
 
     // Integration instances
     private @Nullable PlaceholderAPIExpansion placeholderExpansion;
@@ -59,17 +61,25 @@ public class StatusPlugin extends JavaPlugin {
         configManager.loadAll();
 
         // Initialize PlaceholderUtil
-        de.stylelabor.statusplugin.util.PlaceholderUtil.init(configManager);
+        de.stylelabor.statusplugin.util.PlaceholderUtil.init(this, configManager);
 
         debug = configManager.getConfig().getBoolean("general.debug", false);
+
+        // Clean up any stale teams from previous sessions/crashes
+        cleanupScoreboardTeams();
 
         // Initialize managers with dependency injection
         statusManager = new StatusManager(this, configManager);
         deathTracker = new DeathTracker(this, configManager);
         countryManager = new CountryManager(this, configManager);
+        requestManager = new RequestManager(this, configManager, statusManager);
         chatManager = new ChatManager(this, configManager, statusManager, deathTracker, countryManager);
         tabListManager = new TabListManager(this, configManager, statusManager, deathTracker, countryManager);
         nametagManager = new NametagManager(this, configManager, statusManager);
+
+        // Start background tasks
+        deathTracker.startSaveTask();
+        tabListManager.startUpdateTask();
 
         // Register listeners
         registerListeners();
@@ -91,17 +101,32 @@ public class StatusPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
-        // Save all data
-        if (configManager != null) {
+        // Shutdown and save managers
+        if (deathTracker != null) {
+            deathTracker.shutdown();
+        }
+        if (statusManager != null) {
             statusManager.saveData();
-            deathTracker.saveData();
+        }
+        if (countryManager != null) {
             countryManager.saveData();
+            countryManager.shutdown();
+        }
+        if (requestManager != null) {
+            requestManager.saveData();
         }
 
-        // Shutdown managers
+        // Clean up nametag and tablist teams and tasks
         if (tabListManager != null) {
             tabListManager.shutdown();
         }
+        if (nametagManager != null) {
+            nametagManager.cleanup();
+        }
+        cleanupScoreboardTeams();
+
+        // Shutdown HTTP client resources
+        VersionChecker.shutdown();
 
         // Unregister PlaceholderAPI expansion
         if (placeholderExpansion != null) {
@@ -109,6 +134,19 @@ public class StatusPlugin extends JavaPlugin {
         }
 
         log(Level.INFO, "StatusPlugin disabled!");
+    }
+
+    private void cleanupScoreboardTeams() {
+        try {
+            org.bukkit.scoreboard.Scoreboard scoreboard = Bukkit.getScoreboardManager().getMainScoreboard();
+            for (org.bukkit.scoreboard.Team team : new java.util.ArrayList<>(scoreboard.getTeams())) {
+                if (team.getName().startsWith("sp_")) {
+                    team.unregister();
+                }
+            }
+        } catch (Exception e) {
+            debug("Scoreboard team cleanup: " + e.getMessage());
+        }
     }
 
     private void registerListeners() {
@@ -128,7 +166,8 @@ public class StatusPlugin extends JavaPlugin {
             var statusCommand = new StatusCommand(this, statusManager, configManager);
             var statusClearCommand = new StatusClearCommand(this, statusManager, configManager);
             var statusPreviewCommand = new StatusPreviewCommand(this, statusManager, configManager);
-            var statusAdminCommand = new StatusAdminCommand(this, statusManager, deathTracker, configManager);
+            var statusSuggestCommand = new StatusSuggestCommand(this, requestManager, configManager);
+            var statusAdminCommand = new StatusAdminCommand(this, statusManager, deathTracker, configManager, requestManager);
 
             // Register /status command
             commands.register("status", "View or set your status", statusCommand);
@@ -138,6 +177,9 @@ public class StatusPlugin extends JavaPlugin {
 
             // Register /status-preview command
             commands.register("status-preview", "Preview how a status looks in chat", statusPreviewCommand);
+
+            // Register /status-suggest command
+            commands.register("status-suggest", "Suggest a new status", statusSuggestCommand);
 
             // Register /status-admin command
             commands.register("status-admin", "Admin commands for StatusPlugin", statusAdminCommand);
@@ -195,11 +237,30 @@ public class StatusPlugin extends JavaPlugin {
      * Reload the plugin configuration
      */
     public void reload() {
+        // Save pending in-memory data before reloading configs from disk
+        if (deathTracker != null) {
+            deathTracker.saveData();
+        }
+        if (statusManager != null) {
+            statusManager.saveData();
+        }
+        if (countryManager != null) {
+            countryManager.saveData();
+        }
+        if (requestManager != null) {
+            requestManager.saveData();
+        }
+
         configManager.loadAll();
         statusManager.reload();
         deathTracker.reload();
+        countryManager.reload();
+        chatManager.reload();
         tabListManager.reload();
         nametagManager.reload();
+        if (requestManager != null) {
+            requestManager.reload();
+        }
         debug = configManager.getConfig().getBoolean("general.debug", false);
         log(Level.INFO, "Configuration reloaded!");
     }
@@ -287,5 +348,10 @@ public class StatusPlugin extends JavaPlugin {
     @Nullable
     public LibertyBansIntegration getLibertyBansIntegration() {
         return libertyBansIntegration;
+    }
+
+    @NotNull
+    public RequestManager getRequestManager() {
+        return requestManager;
     }
 }

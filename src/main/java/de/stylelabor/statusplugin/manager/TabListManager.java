@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Manages tab list formatting including header, footer, player list names, and
  * sorting.
  */
-public class TabListManager {
+public final class TabListManager {
 
     private static final DecimalFormat TPS_FORMAT = new DecimalFormat("#0.00");
     private static final DecimalFormat MSPT_FORMAT = new DecimalFormat("#0.0");
@@ -66,7 +66,6 @@ public class TabListManager {
         this.miniMessage = plugin.getMiniMessage();
         this.scoreboard = Objects.requireNonNull(Bukkit.getScoreboardManager()).getMainScoreboard();
         loadConfig();
-        startUpdateTask();
     }
 
     /**
@@ -97,18 +96,18 @@ public class TabListManager {
     /**
      * Check if tab list formatting is enabled
      */
-    public boolean isEnabled() {
+    public final boolean isEnabled() {
         return configManager.getConfig().getBoolean("tablist.enabled", true);
     }
 
     /**
      * Start the periodic update task
      */
-    private void startUpdateTask() {
+    public void startUpdateTask() {
         if (!isEnabled())
             return;
 
-        updateTask = Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, () -> {
+        updateTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
             updateAllPlayers();
             rotatingIndex.incrementAndGet();
         }, 20L, refreshInterval * 20L);
@@ -127,15 +126,30 @@ public class TabListManager {
      * Update a specific player's tab list
      */
     public void updatePlayer(@NotNull Player player) {
+        if (!Bukkit.isPrimaryThread()) {
+            Bukkit.getScheduler().runTask(plugin, () -> updatePlayer(player));
+            return;
+        }
+
         if (!isEnabled())
             return;
+
+        var tabIntegration = plugin.getTabPluginIntegration();
+        if (tabIntegration != null && tabIntegration.isAvailable()) {
+            tabIntegration.updatePlayerTabName(player);
+            removeFromSortTeams(player);
+            return;
+        }
 
         // Update player list name
         updatePlayerListName(player);
 
-        // Update sorting if enabled
-        if (sortingEnabled) {
+        // Update sorting & team if sorting is enabled or nametag is enabled
+        boolean nametagEnabled = plugin.getNametagManager() != null && plugin.getNametagManager().isEnabled();
+        if (sortingEnabled || nametagEnabled) {
             updatePlayerSorting(player);
+        } else {
+            removeFromSortTeams(player);
         }
 
         // Update header and footer
@@ -143,73 +157,123 @@ public class TabListManager {
     }
 
     /**
-     * Update player's tab list sorting using scoreboard teams
+     * Update player's tab list sorting and nametag using a single coordinated scoreboard team
      */
-    private void updatePlayerSorting(@NotNull Player player) {
+    public void updatePlayerSorting(@NotNull Player player) {
+        if (!Bukkit.isPrimaryThread()) {
+            Bukkit.getScheduler().runTask(plugin, () -> updatePlayerSorting(player));
+            return;
+        }
+
+        if (!player.isOnline())
+            return;
+
+        var tabIntegration = plugin.getTabPluginIntegration();
+        if (tabIntegration != null && tabIntegration.isAvailable()) {
+            removeFromSortTeams(player);
+            return;
+        }
+
+        boolean nametagEnabled = plugin.getNametagManager() != null && plugin.getNametagManager().isEnabled();
+        if (!sortingEnabled && !nametagEnabled) {
+            removeFromSortTeams(player);
+            return;
+        }
+
         String status = statusManager.getStatus(player);
         String safeStatus = status != null ? status : "";
         int priority = statusManager.getStatusPriority(safeStatus);
 
-        // Sanitize status to ensure robust alphabetical sorting (B < F)
-        // This removes emojis/colors if they somehow exist in the key
+        // Sanitize status to ensure robust alphabetical sorting
         String sortKey = safeStatus.replaceAll("[^a-zA-Z0-9]", "").toUpperCase();
 
-        // Team name includes:
-        // 1. Priority (000-999) - Configured ranks first
-        // 2. Sort Key (A-Z) - Alphabetical status sorting (e.g. BUILDING before
-        // FARMING)
-        // 3. Player Name - Final tiebreaker
+        // Team name includes priority for sorting (000-999), sortKey, and player name
         String teamName = SORT_TEAM_PREFIX + String.format("%03d", priority) + "_" +
-                sortKey + "_" +
+                (sortKey.isEmpty() ? "" : sortKey + "_") +
                 player.getName().substring(0, Math.min(player.getName().length(), 8));
 
-        // Remove player from any existing sort teams
-        removeFromSortTeams(player);
-
-        // Get or create team on main thread
-        Bukkit.getScheduler().runTask(plugin, () -> {
-            if (!player.isOnline())
-                return;
-
-            Team team = scoreboard.getTeam(teamName);
-            if (team == null) {
-                team = scoreboard.registerNewTeam(teamName);
-                createdSortTeams.add(teamName);
+        // Remove player from any other sort teams
+        for (String existingTeamName : new ArrayList<>(createdSortTeams)) {
+            if (existingTeamName.equals(teamName)) continue;
+            Team t = scoreboard.getTeam(existingTeamName);
+            if (t != null) {
+                if (t.hasEntry(player.getName())) {
+                    t.removeEntry(player.getName());
+                }
+                if (t.getSize() == 0) {
+                    t.unregister();
+                    createdSortTeams.remove(existingTeamName);
+                }
+            } else {
+                createdSortTeams.remove(existingTeamName);
             }
+        }
 
-            // Add player to team for sorting (no prefix since NametagManager handles that)
+        Team team = scoreboard.getTeam(teamName);
+        if (team == null) {
+            team = scoreboard.registerNewTeam(teamName);
+            createdSortTeams.add(teamName);
+        }
+
+        // Set team prefix (status) if nametags are enabled
+        if (nametagEnabled && status != null && !status.isEmpty()) {
+            String statusFormat = statusManager.getStatusFormatByKey(status);
+            if (!statusFormat.isEmpty()) {
+                team.prefix(plugin.parseMessage(statusFormat + " "));
+            } else {
+                team.prefix(Component.empty());
+            }
+        } else {
+            team.prefix(Component.empty());
+        }
+
+        // Add player to team
+        if (!team.hasEntry(player.getName())) {
             team.addEntry(player.getName());
-            plugin.debug("Updated sorting for " + player.getName() + " with team " + teamName);
-        });
+        }
+
+        plugin.debug("Updated team for " + player.getName() + " with team " + teamName);
     }
 
     /**
      * Remove a player from sorting teams
      */
     private void removeFromSortTeams(@NotNull Player player) {
-        Bukkit.getScheduler().runTask(plugin, () -> {
-            for (String teamName : new ArrayList<>(createdSortTeams)) {
-                Team team = scoreboard.getTeam(teamName);
-                if (team != null) {
-                    if (team.hasEntry(player.getName())) {
-                        team.removeEntry(player.getName());
-                    }
-                    // Clean up empty teams
-                    if (team.getSize() == 0) {
-                        team.unregister();
-                        createdSortTeams.remove(teamName);
-                    }
-                } else {
+        if (!Bukkit.isPrimaryThread()) {
+            Bukkit.getScheduler().runTask(plugin, () -> removeFromSortTeams(player));
+            return;
+        }
+
+        for (String teamName : new ArrayList<>(createdSortTeams)) {
+            Team team = scoreboard.getTeam(teamName);
+            if (team != null) {
+                if (team.hasEntry(player.getName())) {
+                    team.removeEntry(player.getName());
+                }
+                // Clean up empty teams
+                if (team.getSize() == 0) {
+                    team.unregister();
                     createdSortTeams.remove(teamName);
                 }
+            } else {
+                createdSortTeams.remove(teamName);
             }
-        });
+        }
     }
 
     /**
      * Remove a player from all sorting (called on quit)
      */
     public void removePlayer(@NotNull Player player) {
+        if (!Bukkit.isPrimaryThread()) {
+            Bukkit.getScheduler().runTask(plugin, () -> removePlayer(player));
+            return;
+        }
+
+        var tabIntegration = plugin.getTabPluginIntegration();
+        if (tabIntegration != null && tabIntegration.isAvailable()) {
+            tabIntegration.resetPlayer(player);
+        }
         removeFromSortTeams(player);
     }
 
@@ -254,12 +318,17 @@ public class TabListManager {
 
         Component listName = miniMessage.deserialize(formatWithPapi, resolvers.build());
 
-        // Schedule on main thread as player list name changes require main thread
-        Bukkit.getScheduler().runTask(plugin, () -> {
+        if (Bukkit.isPrimaryThread()) {
             if (player.isOnline()) {
                 player.playerListName(listName);
             }
-        });
+        } else {
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (player.isOnline()) {
+                    player.playerListName(listName);
+                }
+            });
+        }
     }
 
     /**
@@ -284,11 +353,17 @@ public class TabListManager {
         // Apply header and footer
         Component finalHeader = header;
         Component finalFooter = footer;
-        Bukkit.getScheduler().runTask(plugin, () -> {
+        if (Bukkit.isPrimaryThread()) {
             if (player.isOnline()) {
                 player.sendPlayerListHeaderAndFooter(finalHeader, finalFooter);
             }
-        });
+        } else {
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (player.isOnline()) {
+                    player.sendPlayerListHeaderAndFooter(finalHeader, finalFooter);
+                }
+            });
+        }
     }
 
     /**
@@ -356,7 +431,7 @@ public class TabListManager {
             if (configManager.getTablist().getBoolean("rotating.enabled", true)) {
                 List<String> rotatingMessages = configManager.getTablist().getStringList("rotating.messages");
                 if (!rotatingMessages.isEmpty()) {
-                    int index = rotatingIndex.get() % rotatingMessages.size();
+                    int index = (rotatingIndex.get() & Integer.MAX_VALUE) % rotatingMessages.size();
                     String rotatingLine = rotatingMessages.get(index);
                     // Convert legacy color codes in the rotating message
                     rotatingLine = de.stylelabor.statusplugin.util.ColorUtil.convertLegacyToMiniMessage(rotatingLine);
@@ -477,10 +552,9 @@ public class TabListManager {
             updateTask = null;
         }
 
-        // Clean up sorting teams
-        for (String teamName : new ArrayList<>(createdSortTeams)) {
-            Team team = scoreboard.getTeam(teamName);
-            if (team != null) {
+        // Clean up all plugin teams from scoreboard
+        for (Team team : new ArrayList<>(scoreboard.getTeams())) {
+            if (team.getName().startsWith("sp_") || team.getName().startsWith(SORT_TEAM_PREFIX)) {
                 team.unregister();
             }
         }
@@ -490,7 +564,7 @@ public class TabListManager {
     /**
      * Check if sorting is enabled
      */
-    public boolean isSortingEnabled() {
+    public final boolean isSortingEnabled() {
         return sortingEnabled;
     }
 }

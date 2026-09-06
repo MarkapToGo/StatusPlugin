@@ -24,7 +24,7 @@ import java.util.regex.Pattern;
  * This ensures compatibility with other plugins like DiscordSRV and
  * LibertyBans.
  */
-public class ChatManager {
+public final class ChatManager {
 
     private static final Pattern URL_PATTERN = Pattern.compile(
             "(https?://[\\w\\-._~:/?#\\[\\]@!$&'()*+,;=%]+)",
@@ -232,10 +232,10 @@ public class ChatManager {
                     // Base component with URL text
                     Component urlComponent = Component.text(url);
 
-                    // Apply style from config (MiniMessage)
+                    // Apply style from config (MiniMessage) safely without parsing tags in raw url
                     if (!urlStyle.isEmpty()) {
-                        // Apply style by wrapping content
-                        urlComponent = miniMessage.deserialize(urlStyle + url);
+                        TagResolver resolver = TagResolver.resolver(Placeholder.component("content", Component.text(url)));
+                        urlComponent = miniMessage.deserialize(urlStyle + "<content>", resolver);
                     } else {
                         // Default fallback if empty
                         urlComponent = urlComponent.color(NamedTextColor.AQUA);

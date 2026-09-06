@@ -55,15 +55,15 @@ public class PlaceholderAPIExpansion extends PlaceholderExpansion {
     @Override
     @NotNull
     public String getAuthor() {
-        return plugin.getDescription().getAuthors().isEmpty()
+        return plugin.getPluginMeta().getAuthors().isEmpty()
                 ? "Unknown"
-                : plugin.getDescription().getAuthors().get(0);
+                : plugin.getPluginMeta().getAuthors().get(0);
     }
 
     @Override
     @NotNull
     public String getVersion() {
-        return plugin.getDescription().getVersion();
+        return plugin.getPluginMeta().getVersion();
     }
 
     @Override

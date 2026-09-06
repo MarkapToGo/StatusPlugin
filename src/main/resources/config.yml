@@ -32,7 +32,6 @@ chat:
   format: "<status> <gray><player></gray> <dark_gray>»</dark_gray> <white><message></white>"
   
   # Make URLs in chat clickable
-  # Make URLs in chat clickable
   clickable-urls: true
   
   # Styling for clickable URLs
@@ -155,3 +154,21 @@ updates:
   
   # Only notify ops
   notify-ops: true
+
+# ==========================================
+# Status Requests / Suggestions
+# ==========================================
+requests:
+  # Enable status suggestion system (/status-suggest)
+  enabled: true
+  
+  # Only allow submitting statuses with corner brackets at the start and end (e.g. [STATUS])
+  require-brackets: true
+  
+  # Maximum pending status suggestions per player (0 = unlimited)
+  max-submits-per-player: 3
+  
+  # Minimum and maximum character length (stripped of color/formatting tags)
+  min-length: 3
+  max-length: 24
+

@@ -40,6 +40,21 @@ public class ChatListener implements Listener {
      */
     @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
     public void onAsyncChat(@NotNull AsyncChatEvent event) {
+        // Check LibertyBans mute
+        var libertyBans = plugin.getLibertyBansIntegration();
+        if (libertyBans != null && libertyBans.isAvailable()) {
+            try {
+                var mute = libertyBans.getActiveMute(event.getPlayer()).get(1, java.util.concurrent.TimeUnit.SECONDS);
+                if (mute != null) {
+                    event.setCancelled(true);
+                    libertyBans.sendMuteNotification(event.getPlayer(), mute);
+                    return;
+                }
+            } catch (Exception e) {
+                plugin.debug("LibertyBans mute check failed: " + e.getMessage());
+            }
+        }
+
         if (!chatManager.isEnabled()) {
             return;
         }

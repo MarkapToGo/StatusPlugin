@@ -20,7 +20,7 @@ import java.util.logging.Level;
  * When TAB is present, we use its API instead of our built-in tab list
  * management.
  */
-public class TabPluginIntegration {
+public final class TabPluginIntegration {
 
     private static final LegacyComponentSerializer LEGACY_SERIALIZER = LegacyComponentSerializer.legacySection();
 
@@ -72,21 +72,15 @@ public class TabPluginIntegration {
             return;
 
         String statusFormat = statusManager.getStatusFormat(player.getUniqueId());
-        String playerFormat = configManager.getConfig().getString("tablist.player-format",
-                "<status> <gray><player></gray>");
-
-        // Replace placeholders
-        String formatted = playerFormat
-                .replace("<status>", statusFormat)
-                .replace("<player>", player.getName());
-
-        // Convert MiniMessage to legacy for TAB API compatibility
-        Component component = plugin.parseMessage(formatted);
-        String legacyText = LEGACY_SERIALIZER.serialize(component);
+        String legacyPrefix = null;
+        if (!statusFormat.isEmpty()) {
+            Component component = plugin.parseMessage(statusFormat + " ");
+            legacyPrefix = LEGACY_SERIALIZER.serialize(component);
+        }
 
         try {
-            // TAB API uses legacy formatting
-            tabListFormatManager.setPrefix(tabPlayer, legacyText);
+            // TAB API uses legacy formatting; set only the prefix before the player's name
+            tabListFormatManager.setPrefix(tabPlayer, legacyPrefix);
             plugin.debug("Updated TAB prefix for " + player.getName());
         } catch (Exception e) {
             plugin.debug("Failed to set TAB prefix for " + player.getName() + ": " + e.getMessage());

@@ -48,6 +48,11 @@ public class PlayerListener implements Listener {
     public void onPlayerJoin(@NotNull PlayerJoinEvent event) {
         Player player = event.getPlayer();
 
+        // Clean join message if enabled
+        if (nametagManager.isCleanJoinMessages() && event.joinMessage() != null) {
+            event.joinMessage(nametagManager.cleanMessage(player, event.joinMessage()));
+        }
+
         // Assign default status if configured
         statusManager.assignDefaultStatus(player);
 
@@ -72,6 +77,17 @@ public class PlayerListener implements Listener {
 
         // Update tab list for all other players (so they see this player correctly)
         tabListManager.updateAllPlayers();
+
+        // Check for unnotified status request results (accepted or denied with reason)
+        var unnotified = plugin.getRequestManager().getUnnotifiedRequests(player.getUniqueId());
+        for (var req : unnotified) {
+            if (req.status() == RequestManager.RequestStatus.ACCEPTED && req.assignedKey() != null) {
+                plugin.getRequestManager().notifyPlayerAccepted(player, req.formattedStatus(), req.assignedKey());
+            } else if (req.status() == RequestManager.RequestStatus.DENIED && req.reason() != null) {
+                plugin.getRequestManager().notifyPlayerDenied(player, req.formattedStatus(), req.reason());
+            }
+            plugin.getRequestManager().markNotified(req.id());
+        }
 
         plugin.debug(player.getName() + " joined - status: " +
                 statusManager.getStatus(player) + ", deaths: " + deathTracker.getDeaths(player));
@@ -117,6 +133,11 @@ public class PlayerListener implements Listener {
     @EventHandler(priority = EventPriority.NORMAL)
     public void onPlayerDeath(@NotNull PlayerDeathEvent event) {
         Player player = event.getEntity();
+
+        // Clean death message if enabled
+        if (nametagManager.isCleanDeathMessages() && event.deathMessage() != null) {
+            event.deathMessage(nametagManager.cleanMessage(player, event.deathMessage()));
+        }
 
         // Record death
         deathTracker.recordDeath(player);

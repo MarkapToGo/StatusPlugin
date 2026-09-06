@@ -5,6 +5,7 @@ import org.bukkit.OfflinePlayer;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import de.stylelabor.statusplugin.StatusPlugin;
 import de.stylelabor.statusplugin.config.ConfigManager;
 
 /**
@@ -12,6 +13,7 @@ import de.stylelabor.statusplugin.config.ConfigManager;
  */
 public final class PlaceholderUtil {
 
+    private static StatusPlugin plugin = null;
     private static boolean enabled = false;
     private static boolean initialized = false;
 
@@ -22,10 +24,16 @@ public final class PlaceholderUtil {
     /**
      * Check if PlaceholderAPI is enabled and available
      */
-    public static void init(@NotNull ConfigManager configManager) {
-        if (initialized)
-            return;
+    public static void init(@NotNull StatusPlugin pluginInstance, @NotNull ConfigManager configManager) {
+        plugin = pluginInstance;
+        boolean pluginPresent = Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null;
+        boolean configEnabled = configManager.getConfig().getBoolean("integrations.placeholderapi.enabled", true);
 
+        enabled = pluginPresent && configEnabled;
+        initialized = true;
+    }
+
+    public static void init(@NotNull ConfigManager configManager) {
         boolean pluginPresent = Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null;
         boolean configEnabled = configManager.getConfig().getBoolean("integrations.placeholderapi.enabled", true);
 
@@ -34,7 +42,7 @@ public final class PlaceholderUtil {
     }
 
     /**
-     * Parse placeholders in text
+     * Parse placeholders in text safely on the main thread
      * 
      * @param player The player to parse placeholders for (can be null for
      *               non-player placeholders)
@@ -47,10 +55,32 @@ public final class PlaceholderUtil {
             return text;
         }
 
+        if (Bukkit.isPrimaryThread()) {
+            try {
+                return me.clip.placeholderapi.PlaceholderAPI.setPlaceholders(player, text);
+            } catch (Throwable e) {
+                return text;
+            }
+        }
+
+        // If called asynchronously, resolve safely on main thread if plugin is available
+        if (plugin != null && plugin.isEnabled()) {
+            try {
+                return Bukkit.getScheduler().callSyncMethod(plugin, () ->
+                        me.clip.placeholderapi.PlaceholderAPI.setPlaceholders(player, text)
+                ).get(1, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (Throwable e) {
+                try {
+                    return me.clip.placeholderapi.PlaceholderAPI.setPlaceholders(player, text);
+                } catch (Throwable t) {
+                    return text;
+                }
+            }
+        }
+
         try {
             return me.clip.placeholderapi.PlaceholderAPI.setPlaceholders(player, text);
         } catch (Throwable e) {
-            // Fallback if PAPI throws error
             return text;
         }
     }

@@ -9,8 +9,9 @@ group = "de.stylelabor"
 version = "7.0.10"
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_25
-    targetCompatibility = JavaVersion.VERSION_25
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(25))
+    }
 }
 
 repositories {
@@ -24,8 +25,8 @@ repositories {
 }
 
 dependencies {
-    // Paper API (26.1+ for modern support)
-    compileOnly("io.papermc.paper:paper-api:26.1.2.build.+")
+    // Paper API (26.2+ for modern support)
+    compileOnly("io.papermc.paper:paper-api:26.2.build.+")
     
     // PlaceholderAPI
     compileOnly("me.clip:placeholderapi:2.11.5")
@@ -44,20 +45,31 @@ dependencies {
     
     // JSON parsing
     implementation("org.json:json:20231013")
+
+    // Testing
+    testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testImplementation("io.papermc.paper:paper-api:26.2.build.+")
 }
 
 tasks {
+    test {
+        useJUnitPlatform()
+    }
     processResources {
+        val props = mapOf(
+            "version" to project.version,
+            "name" to project.name
+        )
+        inputs.properties(props)
         filesMatching("paper-plugin.yml") {
-            expand(
-                "version" to project.version,
-                "name" to project.name
-            )
+            expand(props)
         }
     }
 
     shadowJar {
         archiveClassifier.set("")
+        relocate("kotlin", "de.stylelabor.statusplugin.lib.kotlin")
         relocate("org.bstats", "de.stylelabor.statusplugin.lib.bstats")
         relocate("okhttp3", "de.stylelabor.statusplugin.lib.okhttp3")
         relocate("okio", "de.stylelabor.statusplugin.lib.okio")
@@ -76,6 +88,6 @@ tasks {
 
     compileJava {
         options.encoding = "UTF-8"
-        options.compilerArgs.add("-parameters")
+        options.compilerArgs.addAll(listOf("-parameters", "-Xlint:all", "-Xlint:-processing"))
     }
 }

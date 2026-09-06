@@ -3,7 +3,7 @@
 
 ### The Ultimate Status & Chat Management Solution
 
-![Java](https://img.shields.io/badge/Java-21-orange?style=for-the-badge&logo=openjdk) ![Paper](https://img.shields.io/badge/Paper-1.21+-blue?style=for-the-badge&logo=paper) ![Version](https://img.shields.io/badge/Version-7.0.1-green?style=for-the-badge) ![License](https://img.shields.io/badge/License-CUSTOM_LICENSE-red?style=for-the-badge)
+![Java](https://img.shields.io/badge/Java-25-orange?style=for-the-badge&logo=openjdk) ![Paper](https://img.shields.io/badge/Paper-26.2+-blue?style=for-the-badge&logo=paper) ![Version](https://img.shields.io/badge/Version-7.0.10-green?style=for-the-badge) ![License](https://img.shields.io/badge/License-CUSTOM_LICENSE-red?style=for-the-badge)
 
 </div>
 
@@ -37,10 +37,17 @@
 
 | Command | Permission | Description |
 | :--- | :--- | :--- |
-| `/status` | `statusplugin.command.status` | Open the status selection GUI |
-| `/status-clear` | `statusplugin.command.clear` | Reset your status |
-| `/status-preview` | `statusplugin.command.preview` | Preview how you look in chat |
-| `/status-admin` | `statusplugin.admin` | Admin management commands |
+| `/status [option]` | None | View current status or set a new status |
+| `/status-clear` | None | Clear your active status |
+| `/status-preview <status>` | None | Preview how a status looks in chat |
+| `/status-suggest <format>` | None | Suggest a custom status (`/status-suggest info` for help) |
+| `/status-admin set <player> <status>` | `statusplugin.admin` | Set another player's status |
+| `/status-admin reload` | `statusplugin.reload` / `statusplugin.admin` | Reload plugin configuration |
+| `/status-admin deaths <player> <action> [amount]` | `statusplugin.admin` | View or modify player death counts |
+| `/status-admin requests [list\|accept\|deny]` | `statusplugin.admin` | Review and manage player status suggestions |
+
+### Status Permissions
+* Individual status options can be restricted via permissions in `status-options.yml` (e.g. `statusplugin.admin`, `statusplugin.mod`).
 
 ## 🧩 Configuration
 

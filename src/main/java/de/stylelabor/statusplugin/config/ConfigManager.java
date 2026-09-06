@@ -30,6 +30,7 @@ public class ConfigManager {
     private FileConfiguration playerDeaths;
     private FileConfiguration playerCountries;
     private FileConfiguration serverStats;
+    private FileConfiguration statusRequests;
 
     // File references
     private File statusOptionsFile;
@@ -39,6 +40,7 @@ public class ConfigManager {
     private File playerDeathsFile;
     private File playerCountriesFile;
     private File serverStatsFile;
+    private File statusRequestsFile;
 
     public ConfigManager(@NotNull StatusPlugin plugin) {
         this.plugin = plugin;
@@ -83,6 +85,9 @@ public class ConfigManager {
 
         serverStatsFile = new File(plugin.getDataFolder(), "server-stats.yml");
         serverStats = YamlConfiguration.loadConfiguration(serverStatsFile);
+
+        statusRequestsFile = new File(plugin.getDataFolder(), "status-requests.yml");
+        statusRequests = YamlConfiguration.loadConfiguration(statusRequestsFile);
 
         plugin.debug("All configuration files loaded");
     }
@@ -153,6 +158,30 @@ public class ConfigManager {
         }
     }
 
+    /**
+     * Save status requests data
+     */
+    public void saveStatusRequests() {
+        try {
+            statusRequests.save(statusRequestsFile);
+        } catch (IOException e) {
+            plugin.log(Level.SEVERE, "Failed to save status-requests.yml: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Dynamically add a new status option to status-options.yml and save
+     */
+    public void addStatusOption(@NotNull String key, @NotNull String format) {
+        statusOptions.set("statuses." + key.toUpperCase(), format);
+        try {
+            statusOptions.save(statusOptionsFile);
+            plugin.debug("Added new status option: " + key + " = " + format);
+        } catch (IOException e) {
+            plugin.log(Level.SEVERE, "Failed to save status-options.yml: " + e.getMessage());
+        }
+    }
+
     // Getters for configuration files
     @NotNull
     public FileConfiguration getConfig() {
@@ -192,6 +221,11 @@ public class ConfigManager {
     @NotNull
     public FileConfiguration getServerStats() {
         return serverStats;
+    }
+
+    @NotNull
+    public FileConfiguration getStatusRequests() {
+        return statusRequests;
     }
 
     /**
