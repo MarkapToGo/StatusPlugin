@@ -2,22 +2,22 @@ package de.stylelabor.statusplugin.manager;
 
 import de.stylelabor.statusplugin.StatusPlugin;
 import de.stylelabor.statusplugin.config.ConfigManager;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.Response;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 import org.json.JSONObject;
 
-import java.io.IOException;
 import java.net.InetAddress;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 
 /**
@@ -30,7 +30,7 @@ public final class CountryManager {
 
     private final StatusPlugin plugin;
     private final ConfigManager configManager;
-    private final OkHttpClient httpClient;
+    private final HttpClient httpClient;
 
     // Cache: UUID -> CountryData
     private final Map<UUID, CountryData> countryCache = new ConcurrentHashMap<>();
@@ -44,9 +44,8 @@ public final class CountryManager {
     public CountryManager(@NotNull StatusPlugin plugin, @NotNull ConfigManager configManager) {
         this.plugin = plugin;
         this.configManager = configManager;
-        this.httpClient = new OkHttpClient.Builder()
-                .connectTimeout(5, TimeUnit.SECONDS)
-                .readTimeout(5, TimeUnit.SECONDS)
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(5))
                 .build();
         loadCache();
     }
@@ -199,16 +198,16 @@ public final class CountryManager {
      */
     private CountryData fetchFromPrimaryApi(@NotNull String ip) {
         String url = String.format(PRIMARY_API, ip);
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(5))
+                    .GET()
+                    .build();
 
-        Request request = new Request.Builder()
-                .url(url)
-                .get()
-                .build();
-
-        try (Response response = httpClient.newCall(request).execute()) {
-            if (response.isSuccessful() && response.body() != null) {
-                String body = response.body().string();
-                JSONObject json = new JSONObject(body);
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 200 && response.body() != null) {
+                JSONObject json = new JSONObject(response.body());
 
                 if ("success".equals(json.optString("status"))) {
                     String country = json.optString("country", "");
@@ -216,7 +215,10 @@ public final class CountryManager {
                     return new CountryData(country, countryCode, System.currentTimeMillis());
                 }
             }
-        } catch (IOException e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            plugin.debug("Primary API interrupted for " + ip);
+        } catch (Exception e) {
             plugin.debug("Primary API failed for " + ip + ": " + e.getMessage());
         }
 
@@ -228,16 +230,16 @@ public final class CountryManager {
      */
     private CountryData fetchFromFallbackApi(@NotNull String ip) {
         String url = String.format(FALLBACK_API, ip);
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(5))
+                    .GET()
+                    .build();
 
-        Request request = new Request.Builder()
-                .url(url)
-                .get()
-                .build();
-
-        try (Response response = httpClient.newCall(request).execute()) {
-            if (response.isSuccessful() && response.body() != null) {
-                String body = response.body().string();
-                JSONObject json = new JSONObject(body);
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 200 && response.body() != null) {
+                JSONObject json = new JSONObject(response.body());
 
                 String country = json.optString("country_name", "");
                 String countryCode = json.optString("country_code2", "");
@@ -246,7 +248,10 @@ public final class CountryManager {
                     return new CountryData(country, countryCode, System.currentTimeMillis());
                 }
             }
-        } catch (IOException e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            plugin.debug("Fallback API interrupted for " + ip);
+        } catch (Exception e) {
             plugin.debug("Fallback API failed for " + ip + ": " + e.getMessage());
         }
 
@@ -265,13 +270,6 @@ public final class CountryManager {
      * Shutdown HTTP client resources
      */
     public void shutdown() {
-        httpClient.dispatcher().executorService().shutdown();
-        httpClient.connectionPool().evictAll();
-        if (httpClient.cache() != null) {
-            try {
-                httpClient.cache().close();
-            } catch (IOException ignored) {
-            }
-        }
+        httpClient.close();
     }
 }

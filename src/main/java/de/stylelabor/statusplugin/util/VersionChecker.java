@@ -1,16 +1,16 @@
 package de.stylelabor.statusplugin.util;
 
 import de.stylelabor.statusplugin.StatusPlugin;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.Response;
 import org.jetbrains.annotations.NotNull;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import java.util.logging.Level;
 
@@ -21,9 +21,8 @@ public final class VersionChecker {
 
     private static final String MODRINTH_API = "https://api.modrinth.com/v2/project/statusplugin/version";
 
-    private static final OkHttpClient HTTP_CLIENT = new OkHttpClient.Builder()
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(10, TimeUnit.SECONDS)
+    private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(10))
             .build();
 
     private static String latestVersion = null;
@@ -44,52 +43,53 @@ public final class VersionChecker {
             @NotNull BiConsumer<String, String> callback) {
         CompletableFuture.runAsync(() -> {
             try {
-                Request request = new Request.Builder()
-                        .url(MODRINTH_API)
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(MODRINTH_API))
+                        .timeout(Duration.ofSeconds(10))
                         // Use getPluginMeta() for modern Paper plugins
                         .header("User-Agent", "StatusPlugin/" + plugin.getPluginMeta().getVersion())
-                        .get()
+                        .GET()
                         .build();
 
-                try (Response response = HTTP_CLIENT.newCall(request).execute()) {
-                    if (!response.isSuccessful() || response.body() == null) {
-                        plugin.debug("Failed to check for updates: HTTP " + response.code());
-                        return;
-                    }
-
-                    String body = response.body().string();
-                    JSONArray versions = new JSONArray(body);
-
-                    if (versions.isEmpty()) {
-                        plugin.debug("No versions found on Modrinth");
-                        return;
-                    }
-
-                    // Get the first (latest) version
-                    JSONObject latest = versions.getJSONObject(0);
-                    String version = latest.getString("version_number");
-                    String currentVersion = plugin.getPluginMeta().getVersion();
-
-                    // Get download URL
-                    String url = "https://modrinth.com/plugin/statusplugin";
-                    JSONArray files = latest.optJSONArray("files");
-                    if (files != null && !files.isEmpty()) {
-                        downloadUrl = files.getJSONObject(0).optString("url", downloadUrl);
-                    }
-
-                    if (downloadUrl == null) {
-                        downloadUrl = url;
-                    }
-
-                    latestVersion = version;
-                    updateAvailable = isNewer(currentVersion, version);
-
-                    callback.accept(version, downloadUrl);
+                HttpResponse<String> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() != 200 || response.body() == null) {
+                    plugin.debug("Failed to check for updates: HTTP " + response.statusCode());
+                    return;
                 }
-            } catch (IOException e) {
-                plugin.debug("Failed to check for updates: " + e.getMessage());
+
+                String body = response.body();
+                JSONArray versions = new JSONArray(body);
+
+                if (versions.isEmpty()) {
+                    plugin.debug("No versions found on Modrinth");
+                    return;
+                }
+
+                // Get the first (latest) version
+                JSONObject latest = versions.getJSONObject(0);
+                String version = latest.getString("version_number");
+                String currentVersion = plugin.getPluginMeta().getVersion();
+
+                // Get download URL
+                String url = "https://modrinth.com/plugin/statusplugin";
+                JSONArray files = latest.optJSONArray("files");
+                if (files != null && !files.isEmpty()) {
+                    downloadUrl = files.getJSONObject(0).optString("url", downloadUrl);
+                }
+
+                if (downloadUrl == null) {
+                    downloadUrl = url;
+                }
+
+                latestVersion = version;
+                updateAvailable = isNewer(currentVersion, version);
+
+                callback.accept(version, downloadUrl);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                plugin.debug("Update check interrupted");
             } catch (Exception e) {
-                plugin.log(Level.WARNING, "Error parsing update response: " + e.getMessage());
+                plugin.debug("Failed to check for updates: " + e.getMessage());
             }
         });
     }
@@ -98,14 +98,7 @@ public final class VersionChecker {
      * Shutdown HTTP client resources
      */
     public static void shutdown() {
-        HTTP_CLIENT.dispatcher().executorService().shutdown();
-        HTTP_CLIENT.connectionPool().evictAll();
-        if (HTTP_CLIENT.cache() != null) {
-            try {
-                HTTP_CLIENT.cache().close();
-            } catch (IOException ignored) {
-            }
-        }
+        HTTP_CLIENT.close();
     }
 
     /**

@@ -40,9 +40,6 @@ dependencies {
     // bStats
     implementation("org.bstats:bstats-bukkit:3.0.2")
     
-    // OkHttp for HTTP requests
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    
     // JSON parsing
     implementation("org.json:json:20231013")
 
@@ -69,10 +66,7 @@ tasks {
 
     shadowJar {
         archiveClassifier.set("")
-        relocate("kotlin", "de.stylelabor.statusplugin.lib.kotlin")
         relocate("org.bstats", "de.stylelabor.statusplugin.lib.bstats")
-        relocate("okhttp3", "de.stylelabor.statusplugin.lib.okhttp3")
-        relocate("okio", "de.stylelabor.statusplugin.lib.okio")
         relocate("org.json", "de.stylelabor.statusplugin.lib.json")
         
         minimize()
