@@ -3,7 +3,7 @@
 
 ### The Ultimate Status & Chat Management Solution
 
-![Java](https://img.shields.io/badge/Java-25-orange?style=for-the-badge&logo=openjdk) ![Paper](https://img.shields.io/badge/Paper-26.2+-blue?style=for-the-badge&logo=paper) ![Version](https://img.shields.io/badge/Version-7.1.2-green?style=for-the-badge) ![License](https://img.shields.io/badge/License-CUSTOM_LICENSE-red?style=for-the-badge)
+![Java](https://img.shields.io/badge/Java-25-orange?style=for-the-badge&logo=openjdk) ![Paper](https://img.shields.io/badge/Paper-26.2+-blue?style=for-the-badge&logo=paper) ![Version](https://img.shields.io/badge/Version-7.1.3-green?style=for-the-badge) ![License](https://img.shields.io/badge/License-CUSTOM_LICENSE-red?style=for-the-badge)
 
 </div>
 

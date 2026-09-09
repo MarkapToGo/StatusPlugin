@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [7.1.3] - 2026-09-09
+
+### Fixed
+- Fixed `java.lang.IllegalStateException: zip file closed` error in the `OkHttp TaskRunner` thread during plugin disablement or server shutdown by removing shaded OkHttp background threads and switching to the standard library HTTP client.
+
+### Changed
+- Migrated all HTTP requests in `VersionChecker` (Modrinth update checking) and `CountryManager` (IP geolocation lookup) to native JDK `java.net.http.HttpClient`.
+- Cleaned up HTTP resource teardown using modern `HttpClient.close()`.
+
+### Removed
+- Removed dependencies on `com.squareup.okhttp3:okhttp`, `okio`, and `kotlin-stdlib`, significantly reducing shaded plugin JAR size from ~2.8 MB to ~159 KB (~94% reduction).
+
+---
+
 ## [7.1.2] - 2026-09-06
 
 ### Added

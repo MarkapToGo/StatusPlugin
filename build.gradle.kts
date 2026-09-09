@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "de.stylelabor"
-version = "7.1.2"
+version = "7.1.3"
 
 java {
     toolchain {

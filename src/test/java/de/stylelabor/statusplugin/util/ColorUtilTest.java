@@ -105,8 +105,11 @@ public class ColorUtilTest {
     @Test
     public void testVersionComparison() {
         assertTrue(VersionChecker.isNewer("7.1.1", "7.1.2"));
+        assertTrue(VersionChecker.isNewer("7.1.2", "7.1.3"));
         assertTrue(VersionChecker.isNewer("7.1.2", "7.2"));
         assertTrue(VersionChecker.isNewer("7.1.2", "8.0.0"));
+        assertFalse(VersionChecker.isNewer("7.1.3", "7.1.3"));
+        assertFalse(VersionChecker.isNewer("7.1.3", "7.1.2"));
         assertFalse(VersionChecker.isNewer("7.1.2", "7.1.2"));
         assertFalse(VersionChecker.isNewer("7.1.2", "7.1.1"));
         assertFalse(VersionChecker.isNewer("8.0.0", "7.1.2"));
