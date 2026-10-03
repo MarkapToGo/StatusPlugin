@@ -1,0 +1,9 @@
+{
+  "name": "statusplugin-benchmark-bots",
+  "private": true,
+  "description": "Protocol-level bots for the StatusPlugin benchmark (see ../README.md)",
+  "main": "bots.js",
+  "dependencies": {
+    "minecraft-protocol": "1.68.0"
+  }
+}

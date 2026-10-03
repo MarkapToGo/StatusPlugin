@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Joining no longer refreshes every online player's tab list; others only get an updated header/footer (online count) on the next tick, shared by all joins in that tick. The online count now also updates right after a player quits.
 - Chat messages are rendered once instead of once per viewer (`ChatRenderer.viewerUnaware`), ~100× less work per message at 100 players. This also avoids one main-thread PlaceholderAPI lookup per viewer when the chat format contains PAPI placeholders.
 - Parsed status, death count, name/status color and URL hover components are cached instead of re-parsed on every use; config values like `tablist.enabled`, `chat.enabled` and the sorting priority are read once per (re)load.
+- The tab refresh only re-renders a list name or sort team when the player's status, deaths or country changed (list names using PlaceholderAPI are still re-rendered every time). Names and teams changed by other plugins are still restored on the next refresh.
+- Player statuses and status requests are saved in the background (at most every 5 seconds) instead of rewriting the whole file on the main thread for every `/status`, `/status-clear`, suggestion, accept/deny and first join with a default status. Data is still saved immediately on reload and shutdown.
+- The LibertyBans mute check uses LibertyBans' cache of online players' mutes instead of a database query per chat message. It now also catches IP mutes, the same mutes LibertyBans itself enforces.
+
+### Fixed
+- A chat message or placeholder request during `/status-admin reload` (or while a status suggestion is accepted) could briefly see no status for a player.
+
+### Added
+- `benchmark/`: test-server benchmark with 100 bots, plus a check that two plugin versions render identical tab lists, nametags and chat (see `benchmark/README.md`).
 
 ---
 

@@ -67,13 +67,28 @@ public final class TabListManager {
     private boolean rotatingEnabled;
 
     // Sort team of each player, so a status change only touches the old and new team
-    private final Map<UUID, String> playerTeams = new HashMap<>();
+    private final Map<UUID, SortTeam> playerTeams = new HashMap<>();
     // Parsed nametag prefix per status format
     private final Map<String, Component> teamPrefixes = new HashMap<>();
+    // Last rendered list name per player and the values it was rendered from
+    private final Map<UUID, ListNameState> listNames = new HashMap<>();
 
     private boolean headerFooterRefreshQueued;
 
     private record TemplateLine(@NotNull String text, boolean perPlayer, boolean usesRotating) {
+    }
+
+    /**
+     * The player-specific values that list names and header/footer lines are rendered from
+     */
+    private record PlayerValues(@Nullable String status, @NotNull Component statusDisplay, int deaths,
+            @NotNull String country, @NotNull String countryCode) {
+    }
+
+    private record ListNameState(@NotNull PlayerValues values, @NotNull Component listName) {
+    }
+
+    private record SortTeam(@Nullable String status, @NotNull String name) {
     }
 
     public TabListManager(@NotNull StatusPlugin plugin,
@@ -124,6 +139,7 @@ public final class TabListManager {
         rotatingEnabled = tablistConfig.getBoolean("rotating.enabled", true);
 
         teamPrefixes.clear();
+        listNames.clear();
     }
 
     private static void loadLines(@NotNull List<TemplateLine> target, @NotNull List<String> rawLines) {
@@ -265,22 +281,20 @@ public final class TabListManager {
         }
 
         String status = statusManager.getStatus(player);
-        String safeStatus = status != null ? status : "";
-        int priority = statusManager.getStatusPriority(safeStatus);
-
-        // Sanitize status to ensure robust alphabetical sorting
-        String sortKey = NON_ALPHANUMERIC.matcher(safeStatus).replaceAll("").toUpperCase();
-
-        // Team name includes priority for sorting (000-999), sortKey, and player name
         String playerName = player.getName();
-        String teamName = SORT_TEAM_PREFIX + String.format("%03d", priority) + "_" +
-                (sortKey.isEmpty() ? "" : sortKey + "_") +
-                playerName.substring(0, Math.min(playerName.length(), 8));
 
-        // Leave the previous team if the status (and therefore the team) changed
-        String previousTeam = playerTeams.put(player.getUniqueId(), teamName);
-        if (previousTeam != null && !previousTeam.equals(teamName)) {
-            leaveTeam(playerName, previousTeam);
+        // The team name only depends on the status, so it is only rebuilt when the status changed
+        SortTeam previous = playerTeams.get(player.getUniqueId());
+        String teamName;
+        if (previous != null && Objects.equals(previous.status(), status)) {
+            teamName = previous.name();
+        } else {
+            teamName = sortTeamName(playerName, status);
+            playerTeams.put(player.getUniqueId(), new SortTeam(status, teamName));
+            // Leave the previous team if the status (and therefore the team) changed
+            if (previous != null && !previous.name().equals(teamName)) {
+                leaveTeam(playerName, previous.name());
+            }
         }
 
         Team team = scoreboard.getTeam(teamName);
@@ -309,6 +323,22 @@ public final class TabListManager {
     }
 
     /**
+     * Team name with priority for sorting (000-999), the sanitized status and the player name
+     */
+    @NotNull
+    private String sortTeamName(@NotNull String playerName, @Nullable String status) {
+        String safeStatus = status != null ? status : "";
+        int priority = statusManager.getStatusPriority(safeStatus);
+
+        // Sanitize status to ensure robust alphabetical sorting
+        String sortKey = NON_ALPHANUMERIC.matcher(safeStatus).replaceAll("").toUpperCase();
+
+        return SORT_TEAM_PREFIX + String.format("%03d", priority) + "_" +
+                (sortKey.isEmpty() ? "" : sortKey + "_") +
+                playerName.substring(0, Math.min(playerName.length(), 8));
+    }
+
+    /**
      * Remove a player from their sorting team
      */
     private void removeFromSortTeams(@NotNull Player player) {
@@ -317,9 +347,9 @@ public final class TabListManager {
             return;
         }
 
-        String teamName = playerTeams.remove(player.getUniqueId());
-        if (teamName != null) {
-            leaveTeam(player.getName(), teamName);
+        SortTeam team = playerTeams.remove(player.getUniqueId());
+        if (team != null) {
+            leaveTeam(player.getName(), team.name());
         }
     }
 
@@ -354,17 +384,32 @@ public final class TabListManager {
             tabIntegration.resetPlayer(player);
         }
         removeFromSortTeams(player);
+        listNames.remove(player.getUniqueId());
     }
 
     /**
      * Update a player's list name
      */
     public void updatePlayerListName(@NotNull Player player) {
-        TagResolver.Builder resolvers = playerResolvers(player);
+        PlayerValues values = playerValues(player);
+
+        // Without PAPI placeholders the list name only depends on these values, so it is
+        // only re-rendered when they changed. It is still re-applied if something else
+        // replaced it.
+        boolean cacheable = Bukkit.isPrimaryThread() && playerFormat.indexOf('%') == -1;
+        if (cacheable) {
+            ListNameState last = listNames.get(player.getUniqueId());
+            if (last != null && last.values().equals(values)) {
+                applyListName(player, last.listName());
+                return;
+            }
+        }
+
+        TagResolver.Builder resolvers = playerResolvers(values);
 
         Component playerName = Component.text(player.getName());
         if (nameColorsEnabled) {
-            String rawStatus = statusManager.getStatus(player);
+            String rawStatus = values.status();
             if (rawStatus != null) {
                 Component color = nameColors.get(rawStatus.toUpperCase());
                 if (color != null) {
@@ -378,6 +423,9 @@ public final class TabListManager {
         formatWithPapi = ColorUtil.convertLegacyToMiniMessage(formatWithPapi);
 
         Component listName = miniMessage.deserialize(formatWithPapi, resolvers.build());
+        if (cacheable) {
+            listNames.put(player.getUniqueId(), new ListNameState(values, listName));
+        }
 
         if (Bukkit.isPrimaryThread()) {
             applyListName(player, listName);
@@ -426,21 +474,30 @@ public final class TabListManager {
         return result;
     }
 
+    @NotNull
+    private PlayerValues playerValues(@NotNull Player player) {
+        UUID uuid = player.getUniqueId();
+        return new PlayerValues(
+                statusManager.getStatus(uuid),
+                statusManager.getStatusDisplay(uuid),
+                deathTracker.getDeaths(uuid),
+                countryManager.getCountry(uuid).orElse(""),
+                countryManager.getCountryCode(uuid).orElse(""));
+    }
+
     /**
      * Placeholders that depend on the player and are shared by the list name and
      * header/footer (<player> differs between the two and is added by the caller).
      */
     @NotNull
-    private TagResolver.Builder playerResolvers(@NotNull Player player) {
-        UUID uuid = player.getUniqueId();
-        int deaths = deathTracker.getDeaths(uuid);
+    private TagResolver.Builder playerResolvers(@NotNull PlayerValues values) {
         return TagResolver.builder()
-                .resolver(Placeholder.component("status", statusManager.getStatusDisplay(uuid)))
-                .resolver(Placeholder.unparsed("deaths", String.valueOf(deaths)))
+                .resolver(Placeholder.component("status", values.statusDisplay()))
+                .resolver(Placeholder.unparsed("deaths", String.valueOf(values.deaths())))
                 // Formatted deaths: [☠ N]
-                .resolver(Placeholder.component("deaths_formatted", deathTracker.formatDeaths(deaths)))
-                .resolver(Placeholder.unparsed("country", countryManager.getCountry(uuid).orElse("")))
-                .resolver(Placeholder.unparsed("countrycode", countryManager.getCountryCode(uuid).orElse("")));
+                .resolver(Placeholder.component("deaths_formatted", deathTracker.formatDeaths(values.deaths())))
+                .resolver(Placeholder.unparsed("country", values.country()))
+                .resolver(Placeholder.unparsed("countrycode", values.countryCode()));
     }
 
     /**
@@ -548,7 +605,7 @@ public final class TabListManager {
         private TagResolver resolversFor(@NotNull Player player) {
             if (currentPlayer != player || currentResolvers == null) {
                 currentPlayer = player;
-                currentResolvers = playerResolvers(player)
+                currentResolvers = playerResolvers(playerValues(player))
                         .resolver(Placeholder.unparsed("player", player.getName()))
                         .resolver(serverResolvers)
                         .build();
@@ -629,6 +686,7 @@ public final class TabListManager {
             }
         }
         playerTeams.clear();
+        listNames.clear();
     }
 
     /**

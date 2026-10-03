@@ -8,11 +8,13 @@ import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import space.arim.libertybans.api.LibertyBans;
+import space.arim.libertybans.api.NetworkAddress;
 import space.arim.libertybans.api.PlayerVictim;
 import space.arim.libertybans.api.PunishmentType;
 import space.arim.libertybans.api.punish.Punishment;
 import space.arim.libertybans.api.select.PunishmentSelector;
 
+import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
@@ -69,6 +71,16 @@ public class LibertyBansIntegration {
         }
 
         PunishmentSelector selector = libertyBans.getSelector();
+
+        // LibertyBans caches the mutes of online players: the future is already
+        // complete then, so chatting does not wait for a database query
+        InetSocketAddress socketAddress = player.getAddress();
+        if (socketAddress != null && socketAddress.getAddress() != null) {
+            return selector.getCachedMute(player.getUniqueId(), NetworkAddress.of(socketAddress.getAddress()))
+                    .toCompletableFuture()
+                    .thenApply(optional -> optional.orElse(null));
+        }
+
         PlayerVictim victim = PlayerVictim.of(player.getUniqueId());
 
         return selector.selectionBuilder()

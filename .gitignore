@@ -18,3 +18,9 @@ bin/
 
 # OS
 .DS_Store
+
+# Benchmark (downloads, test server, results)
+benchmark/work/
+benchmark/bots/node_modules/
+benchmark/bots/package-lock.json
+benchmark/__pycache__/

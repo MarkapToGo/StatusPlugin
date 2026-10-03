@@ -1,0 +1,8 @@
+name: StatusBench
+version: 1.0
+main: de.stylelabor.benchmark.StatusBench
+api-version: '26.2'
+softdepend: [StatusPlugin]
+commands:
+  bench:
+    description: StatusPlugin benchmark harness (driven by benchmark/bench.py)

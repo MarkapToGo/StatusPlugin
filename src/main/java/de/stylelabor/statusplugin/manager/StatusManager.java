@@ -2,8 +2,10 @@ package de.stylelabor.statusplugin.manager;
 
 import de.stylelabor.statusplugin.StatusPlugin;
 import de.stylelabor.statusplugin.config.ConfigManager;
+import de.stylelabor.statusplugin.util.BatchedSaver;
 import net.kyori.adventure.text.Component;
 import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -16,27 +18,35 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class StatusManager {
 
+    // How often changed statuses are written to player-status.yml in the background
+    private static final long SAVE_INTERVAL_TICKS = 5 * 20L;
+
     private final StatusPlugin plugin;
     private final ConfigManager configManager;
+    private final BatchedSaver saver;
+
+    // These maps are also read by chat and PlaceholderAPI threads, so (re)loading
+    // builds new maps and swaps them in instead of clearing and refilling them.
 
     // Cache of player statuses (UUID -> status key)
-    private final Map<UUID, String> playerStatuses = new ConcurrentHashMap<>();
+    private volatile Map<UUID, String> playerStatuses = new ConcurrentHashMap<>();
 
     // Cache of parsed status components
-    private final Map<String, Component> statusDisplayCache = new ConcurrentHashMap<>();
+    private volatile Map<String, Component> statusDisplayCache = Map.of();
 
-    // Status options (key -> MiniMessage format)
-    private final Map<String, String> statusOptions = new LinkedHashMap<>();
+    // Status options (key -> MiniMessage format), in config order
+    private volatile Map<String, String> statusOptions = Map.of();
 
     // Status restrictions (status key -> permission)
-    private final Map<String, String> statusRestrictions = new HashMap<>();
+    private volatile Map<String, String> statusRestrictions = Map.of();
 
     // Tab list sorting order from config.yml
-    private List<String> sortingPriority = List.of();
+    private volatile List<String> sortingPriority = List.of();
 
     public StatusManager(@NotNull StatusPlugin plugin, @NotNull ConfigManager configManager) {
         this.plugin = plugin;
         this.configManager = configManager;
+        this.saver = new BatchedSaver(plugin, this::writeData);
         loadStatusOptions();
         loadPlayerStatuses();
     }
@@ -45,9 +55,9 @@ public final class StatusManager {
      * Load status options from config
      */
     private void loadStatusOptions() {
-        statusOptions.clear();
-        statusDisplayCache.clear();
-        statusRestrictions.clear();
+        Map<String, String> options = new LinkedHashMap<>();
+        Map<String, Component> displays = new HashMap<>();
+        Map<String, String> restrictions = new HashMap<>();
 
         ConfigurationSection statuses = configManager.getStatusOptions().getConfigurationSection("statuses");
         if (statuses != null) {
@@ -59,34 +69,37 @@ public final class StatusManager {
                     String convertedFormat = de.stylelabor.statusplugin.util.ColorUtil
                             .convertLegacyToMiniMessage(format);
 
-                    statusOptions.put(key.toUpperCase(), convertedFormat);
+                    options.put(key.toUpperCase(), convertedFormat);
                     // Pre-cache the parsed component
-                    statusDisplayCache.put(key.toUpperCase(), plugin.parseMessage(convertedFormat));
+                    displays.put(key.toUpperCase(), plugin.parseMessage(convertedFormat));
                 }
             }
         }
 
         // Load restrictions
-        ConfigurationSection restrictions = configManager.getStatusOptions().getConfigurationSection("restrictions");
-        if (restrictions != null) {
-            for (String key : restrictions.getKeys(false)) {
-                String permission = restrictions.getString(key);
+        ConfigurationSection restrictionSection = configManager.getStatusOptions().getConfigurationSection("restrictions");
+        if (restrictionSection != null) {
+            for (String key : restrictionSection.getKeys(false)) {
+                String permission = restrictionSection.getString(key);
                 if (permission != null) {
-                    statusRestrictions.put(key.toUpperCase(), permission);
+                    restrictions.put(key.toUpperCase(), permission);
                 }
             }
         }
 
+        statusOptions = Collections.unmodifiableMap(options);
+        statusDisplayCache = Map.copyOf(displays);
+        statusRestrictions = Map.copyOf(restrictions);
         sortingPriority = List.copyOf(configManager.getConfig().getStringList("tablist.sorting.priority"));
 
-        plugin.debug("Loaded " + statusOptions.size() + " status options");
+        plugin.debug("Loaded " + options.size() + " status options");
     }
 
     /**
      * Load player statuses from file
      */
     private void loadPlayerStatuses() {
-        playerStatuses.clear();
+        Map<UUID, String> statuses = new ConcurrentHashMap<>();
 
         var playerStatusConfig = configManager.getPlayerStatus();
         for (String uuidString : playerStatusConfig.getKeys(false)) {
@@ -94,14 +107,15 @@ public final class StatusManager {
                 UUID uuid = UUID.fromString(uuidString);
                 String status = playerStatusConfig.getString(uuidString);
                 if (status != null) {
-                    playerStatuses.put(uuid, status.trim().toUpperCase());
+                    statuses.put(uuid, status.trim().toUpperCase());
                 }
             } catch (IllegalArgumentException e) {
                 plugin.debug("Invalid UUID in player-status.yml: " + uuidString);
             }
         }
 
-        plugin.debug("Loaded statuses for " + playerStatuses.size() + " players");
+        playerStatuses = statuses;
+        plugin.debug("Loaded statuses for " + statuses.size() + " players");
     }
 
     /**
@@ -113,23 +127,47 @@ public final class StatusManager {
     }
 
     /**
-     * Save player status data
+     * Reload only the status options, e.g. after a new status was added.
+     * Player statuses stay as they are in memory.
+     */
+    public void reloadStatusOptions() {
+        loadStatusOptions();
+    }
+
+    /**
+     * Start writing changed statuses to disk in the background
+     */
+    public void startSaveTask() {
+        saver.start(SAVE_INTERVAL_TICKS);
+    }
+
+    /**
+     * Save player status data now
      */
     public void saveData() {
-        var playerStatusConfig = configManager.getPlayerStatus();
+        saver.saveNow();
+    }
 
-        // Clear existing data
-        for (String key : playerStatusConfig.getKeys(false)) {
-            playerStatusConfig.set(key, null);
+    /**
+     * Stop background saving and save pending changes
+     */
+    public void shutdown() {
+        saver.shutdown();
+    }
+
+    /**
+     * Write a snapshot of all player statuses to player-status.yml (runs on the
+     * background save thread or during reload/shutdown)
+     */
+    private void writeData() {
+        Map<UUID, String> statuses = playerStatuses;
+        YamlConfiguration data = new YamlConfiguration();
+        for (Map.Entry<UUID, String> entry : statuses.entrySet()) {
+            data.set(entry.getKey().toString(), entry.getValue());
         }
 
-        // Save current data
-        for (Map.Entry<UUID, String> entry : playerStatuses.entrySet()) {
-            playerStatusConfig.set(entry.getKey().toString(), entry.getValue());
-        }
-
-        configManager.savePlayerStatus();
-        plugin.debug("Saved statuses for " + playerStatuses.size() + " players");
+        configManager.savePlayerStatus(data);
+        plugin.debug("Saved statuses for " + statuses.size() + " players");
     }
 
     /**
@@ -192,7 +230,7 @@ public final class StatusManager {
             return false;
         }
         playerStatuses.put(uuid, key);
-        saveData();
+        saver.markDirty();
         return true;
     }
 
@@ -206,10 +244,10 @@ public final class StatusManager {
     /**
      * Clear a player's status
      */
-     public void clearStatus(@NotNull UUID uuid) {
-         playerStatuses.put(uuid, "");
-         saveData();
-     }
+    public void clearStatus(@NotNull UUID uuid) {
+        playerStatuses.put(uuid, "");
+        saver.markDirty();
+    }
 
     /**
      * Clear a player's status

@@ -80,6 +80,8 @@ public class StatusPlugin extends JavaPlugin {
 
         // Start background tasks
         deathTracker.startSaveTask();
+        statusManager.startSaveTask();
+        requestManager.startSaveTask();
         tabListManager.startUpdateTask();
 
         // Register listeners
@@ -107,14 +109,14 @@ public class StatusPlugin extends JavaPlugin {
             deathTracker.shutdown();
         }
         if (statusManager != null) {
-            statusManager.saveData();
+            statusManager.shutdown();
         }
         if (countryManager != null) {
             countryManager.saveData();
             countryManager.shutdown();
         }
         if (requestManager != null) {
-            requestManager.saveData();
+            requestManager.shutdown();
         }
 
         // Clean up nametag and tablist teams and tasks

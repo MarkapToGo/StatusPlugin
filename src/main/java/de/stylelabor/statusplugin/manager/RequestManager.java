@@ -2,11 +2,13 @@ package de.stylelabor.statusplugin.manager;
 
 import de.stylelabor.statusplugin.StatusPlugin;
 import de.stylelabor.statusplugin.config.ConfigManager;
+import de.stylelabor.statusplugin.util.BatchedSaver;
 import de.stylelabor.statusplugin.util.ColorUtil;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -38,9 +40,13 @@ public final class RequestManager {
     ) {
     }
 
+    // How often changed requests are written to status-requests.yml in the background
+    private static final long SAVE_INTERVAL_TICKS = 5 * 20L;
+
     private final StatusPlugin plugin;
     private final ConfigManager configManager;
     private final StatusManager statusManager;
+    private final BatchedSaver saver;
 
     private final Map<String, StatusRequest> requests = new LinkedHashMap<>();
     private int idCounter = 1;
@@ -51,6 +57,7 @@ public final class RequestManager {
         this.plugin = plugin;
         this.configManager = configManager;
         this.statusManager = statusManager;
+        this.saver = new BatchedSaver(plugin, this::writeData);
         loadRequests();
     }
 
@@ -93,30 +100,53 @@ public final class RequestManager {
     }
 
     /**
-     * Save requests to status-requests.yml
+     * Start writing changed requests to disk in the background
      */
-    public synchronized void saveData() {
-        var config = configManager.getStatusRequests();
+    public void startSaveTask() {
+        saver.start(SAVE_INTERVAL_TICKS);
+    }
 
-        // Clear existing requests section
-        config.set("requests", null);
-        config.set("meta.next-id", idCounter);
+    /**
+     * Save requests to status-requests.yml now
+     */
+    public void saveData() {
+        saver.saveNow();
+    }
 
-        for (StatusRequest req : requests.values()) {
-            String path = "requests." + req.id();
-            config.set(path + ".uuid", req.playerUuid().toString());
-            config.set(path + ".player", req.playerName());
-            config.set(path + ".raw", req.rawInput());
-            config.set(path + ".format", req.formattedStatus());
-            config.set(path + ".timestamp", req.timestamp());
-            config.set(path + ".status", req.status().name());
-            config.set(path + ".assigned-key", req.assignedKey());
-            config.set(path + ".reason", req.reason());
-            config.set(path + ".notified", req.notified());
+    /**
+     * Stop background saving and save pending changes
+     */
+    public void shutdown() {
+        saver.shutdown();
+    }
+
+    /**
+     * Write a snapshot of all requests. The snapshot is taken under this
+     * manager's lock; the file write happens outside of it.
+     */
+    private void writeData() {
+        YamlConfiguration data = new YamlConfiguration();
+        int count;
+        synchronized (this) {
+            data.set("meta.next-id", idCounter);
+
+            for (StatusRequest req : requests.values()) {
+                String path = "requests." + req.id();
+                data.set(path + ".uuid", req.playerUuid().toString());
+                data.set(path + ".player", req.playerName());
+                data.set(path + ".raw", req.rawInput());
+                data.set(path + ".format", req.formattedStatus());
+                data.set(path + ".timestamp", req.timestamp());
+                data.set(path + ".status", req.status().name());
+                data.set(path + ".assigned-key", req.assignedKey());
+                data.set(path + ".reason", req.reason());
+                data.set(path + ".notified", req.notified());
+            }
+            count = requests.size();
         }
 
-        configManager.saveStatusRequests();
-        plugin.debug("Saved " + requests.size() + " status requests");
+        configManager.saveStatusRequests(data);
+        plugin.debug("Saved " + count + " status requests");
     }
 
     /**
@@ -161,7 +191,7 @@ public final class RequestManager {
         );
 
         requests.put(id, req);
-        saveData();
+        saver.markDirty();
         return req;
     }
 
@@ -222,7 +252,7 @@ public final class RequestManager {
                 notified
         );
         requests.put(req.id(), updated);
-        saveData();
+        saver.markDirty();
 
         boolean appendClear = configManager.getConfig().getBoolean("requests.append-clear-color",
                 configManager.getConfig().getBoolean("requests.clear-color-at-end",
@@ -233,9 +263,10 @@ public final class RequestManager {
             finalStatusFormat = ColorUtil.ensureResetAtEnd(finalStatusFormat);
         }
 
-        // Save into status-options.yml and reload status manager
+        // Save into status-options.yml and reload the status options (player
+        // statuses stay in memory; their file may not be written yet)
         configManager.addStatusOption(key, finalStatusFormat);
-        statusManager.reload();
+        statusManager.reloadStatusOptions();
 
         return key;
     }
@@ -269,7 +300,7 @@ public final class RequestManager {
                 notified
         );
         requests.put(req.id(), updated);
-        saveData();
+        saver.markDirty();
         return true;
     }
 
@@ -306,7 +337,7 @@ public final class RequestManager {
                     true
             );
             requests.put(req.id(), updated);
-            saveData();
+            saver.markDirty();
         }
     }
 

@@ -25,22 +25,22 @@ public class ConfigManager {
     private FileConfiguration tablist;
     private FileConfiguration language;
 
-    // Data files
-    private FileConfiguration playerStatus;
+    // Data files (player status and requests are replaced by background saves)
+    private volatile FileConfiguration playerStatus;
     private FileConfiguration playerDeaths;
     private FileConfiguration playerCountries;
     private FileConfiguration serverStats;
-    private FileConfiguration statusRequests;
+    private volatile FileConfiguration statusRequests;
 
     // File references
     private File statusOptionsFile;
     private File tablistFile;
     private File languageFile;
-    private File playerStatusFile;
+    private volatile File playerStatusFile;
     private File playerDeathsFile;
     private File playerCountriesFile;
     private File serverStatsFile;
-    private File statusRequestsFile;
+    private volatile File statusRequestsFile;
 
     public ConfigManager(@NotNull StatusPlugin plugin) {
         this.plugin = plugin;
@@ -126,6 +126,19 @@ public class ConfigManager {
     }
 
     /**
+     * Replace the player status data and write it to player-status.yml.
+     * Safe to call from a background thread.
+     */
+    public void savePlayerStatus(@NotNull FileConfiguration data) {
+        playerStatus = data;
+        try {
+            data.save(playerStatusFile);
+        } catch (IOException e) {
+            plugin.log(Level.SEVERE, "Failed to save player-status.yml: " + e.getMessage());
+        }
+    }
+
+    /**
      * Save player deaths data
      */
     public void savePlayerDeaths() {
@@ -164,6 +177,19 @@ public class ConfigManager {
     public void saveStatusRequests() {
         try {
             statusRequests.save(statusRequestsFile);
+        } catch (IOException e) {
+            plugin.log(Level.SEVERE, "Failed to save status-requests.yml: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Replace the status request data and write it to status-requests.yml.
+     * Safe to call from a background thread.
+     */
+    public void saveStatusRequests(@NotNull FileConfiguration data) {
+        statusRequests = data;
+        try {
+            data.save(statusRequestsFile);
         } catch (IOException e) {
             plugin.log(Level.SEVERE, "Failed to save status-requests.yml: " + e.getMessage());
         }
