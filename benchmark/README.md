@@ -55,10 +55,10 @@ server never shows up on the plugin's public bStats page.
 
 ```sh
 # One run of one jar ("none" = control run without StatusPlugin)
-python3 benchmark/bench.py run my-test build/libs/StatusPlugin-7.1.3.jar --big-data 20000 --libertybans
+python3 benchmark/bench.py run my-test build/libs/StatusPlugin-<version>.jar --big-data 20000 --libertybans
 
 # Only the output check (rendered output + scenario), about 2 minutes
-python3 benchmark/bench.py run my-output build/libs/StatusPlugin-7.1.3.jar --dump-only --stress
+python3 benchmark/bench.py run my-output build/libs/StatusPlugin-<version>.jar --dump-only --stress
 
 # Compare finished runs, and inspect a profile
 python3 benchmark/bench.py summary old new control

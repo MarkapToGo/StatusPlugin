@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [7.1.4] - 2026-10-03
 
 ### Changed
 - Tab list refresh computes server-wide placeholders (online count, world counts, TPS, time, …) once per refresh instead of once per line and player, and parses header/footer lines without player-specific placeholders only once. With 100 players a refresh dropped from ~110 ms to ~6 ms on the main thread.
