@@ -2,6 +2,8 @@ package de.stylelabor.statusplugin.manager;
 
 import de.stylelabor.statusplugin.StatusPlugin;
 import de.stylelabor.statusplugin.config.ConfigManager;
+import de.stylelabor.statusplugin.util.ColorUtil;
+import de.stylelabor.statusplugin.util.PlaceholderUtil;
 import io.papermc.paper.chat.ChatRenderer;
 import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.text.Component;
@@ -14,6 +16,7 @@ import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
 import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -36,16 +39,19 @@ public final class ChatManager {
     private final CountryManager countryManager;
     private final MiniMessage miniMessage;
 
-    private String chatFormat;
-    private boolean clickableUrls;
-    private String urlStyle;
-    private String urlHover;
+    // Read by the async chat threads, replaced as a whole on reload
+    private volatile boolean enabled;
+    private volatile String chatFormat;
+    private volatile boolean clickableUrls;
+    private volatile String urlStyle;
+    private volatile @Nullable Component urlHover;
+    private volatile TextReplacementConfig urlReplacement;
 
-    private boolean statusColorsEnabled;
-    private final Map<String, String> statusColors = new HashMap<>();
+    private volatile boolean statusColorsEnabled;
+    private volatile Map<String, Component> statusColors = Map.of();
 
-    private boolean nameColorsEnabled;
-    private final Map<String, String> nameColors = new HashMap<>();
+    private volatile boolean nameColorsEnabled;
+    private volatile Map<String, Component> nameColors = Map.of();
 
     public ChatManager(@NotNull StatusPlugin plugin,
             @NotNull ConfigManager configManager,
@@ -65,50 +71,51 @@ public final class ChatManager {
      */
     private void loadConfig() {
         var config = configManager.getConfig();
+        enabled = config.getBoolean("chat.enabled", true);
+
         String rawChatFormat = config.getString("chat.format",
                 "<status> <gray><player></gray> <dark_gray>»</dark_gray> <white><message></white>");
-        chatFormat = de.stylelabor.statusplugin.util.ColorUtil.convertLegacyToMiniMessage(rawChatFormat);
+        chatFormat = ColorUtil.convertLegacyToMiniMessage(rawChatFormat);
 
         clickableUrls = config.getBoolean("chat.clickable-urls", true);
 
         String rawUrlStyle = config.getString("chat.url-style", "<aqua><u>");
-        urlStyle = de.stylelabor.statusplugin.util.ColorUtil.convertLegacyToMiniMessage(rawUrlStyle);
+        urlStyle = ColorUtil.convertLegacyToMiniMessage(rawUrlStyle);
 
         String rawUrlHover = config.getString("chat.url-hover", "<gray>Click to open URL");
-        urlHover = de.stylelabor.statusplugin.util.ColorUtil.convertLegacyToMiniMessage(rawUrlHover);
+        String hover = ColorUtil.convertLegacyToMiniMessage(rawUrlHover);
+        urlHover = hover.isEmpty() ? null : miniMessage.deserialize(hover);
+        urlReplacement = createUrlReplacement();
 
         statusColorsEnabled = config.getBoolean("chat.status-colors.enabled", false);
-        statusColors.clear();
-        ConfigurationSection colors = config.getConfigurationSection("chat.status-colors.colors");
-        if (colors != null) {
-            for (String key : colors.getKeys(false)) {
-                String color = colors.getString(key);
-                if (color != null) {
-                    statusColors.put(key.toUpperCase(),
-                            de.stylelabor.statusplugin.util.ColorUtil.convertLegacyToMiniMessage(color));
-                }
-            }
-        }
+        statusColors = loadColors(config.getConfigurationSection("chat.status-colors.colors"));
 
         nameColorsEnabled = config.getBoolean("chat.name-colors.enabled", false);
-        nameColors.clear();
-        ConfigurationSection nameSection = config.getConfigurationSection("chat.name-colors.colors");
-        if (nameSection != null) {
-            for (String key : nameSection.getKeys(false)) {
-                String color = nameSection.getString(key);
+        nameColors = loadColors(config.getConfigurationSection("chat.name-colors.colors"));
+    }
+
+    /**
+     * Parse a status -> color section once, so chat messages reuse the components
+     */
+    @NotNull
+    private Map<String, Component> loadColors(@Nullable ConfigurationSection section) {
+        Map<String, Component> colors = new HashMap<>();
+        if (section != null) {
+            for (String key : section.getKeys(false)) {
+                String color = section.getString(key);
                 if (color != null) {
-                    nameColors.put(key.toUpperCase(),
-                            de.stylelabor.statusplugin.util.ColorUtil.convertLegacyToMiniMessage(color));
+                    colors.put(key.toUpperCase(), miniMessage.deserialize(ColorUtil.convertLegacyToMiniMessage(color)));
                 }
             }
         }
+        return Map.copyOf(colors);
     }
 
     /**
      * Check if chat formatting is enabled
      */
     public boolean isEnabled() {
-        return configManager.getConfig().getBoolean("chat.enabled", true);
+        return enabled;
     }
 
     /**
@@ -116,23 +123,25 @@ public final class ChatManager {
      */
     @NotNull
     public ChatRenderer createRenderer(@NotNull Player player) {
-        return new StatusChatRenderer(player);
+        // The output is the same for every viewer, so Paper renders the message once
+        // instead of once per online player
+        return ChatRenderer.viewerUnaware(new StatusChatRenderer(player));
     }
 
     /**
      * Custom ChatRenderer implementation that formats chat messages
      */
-    private class StatusChatRenderer implements ChatRenderer {
+    private class StatusChatRenderer implements ChatRenderer.ViewerUnaware {
 
         private final Player player;
-        private final String statusFormat;
+        private final Component statusDisplay;
         private final int deaths;
         private final String country;
         private final String countryCode;
 
         public StatusChatRenderer(@NotNull Player player) {
             this.player = player;
-            this.statusFormat = statusManager.getStatusFormat(player.getUniqueId());
+            this.statusDisplay = statusManager.getStatusDisplay(player.getUniqueId());
             this.deaths = deathTracker.getDeaths(player.getUniqueId());
             this.country = countryManager.getCountry(player.getUniqueId()).orElse("");
             this.countryCode = countryManager.getCountryCode(player.getUniqueId()).orElse("");
@@ -141,20 +150,20 @@ public final class ChatManager {
         @Override
         @NotNull
         public Component render(@NotNull Player source, @NotNull Component sourceDisplayName,
-                @NotNull Component message, @NotNull Audience viewer) {
+                @NotNull Component message) {
             // Apply clickable URLs to the message
             Component processedMessage = message;
             if (clickableUrls) {
-                processedMessage = makeUrlsClickable(message);
+                processedMessage = message.replaceText(urlReplacement);
             }
 
             // Apply status color if enabled and configured for this status
             if (statusColorsEnabled) {
                 String rawStatus = statusManager.getStatus(player);
                 if (rawStatus != null) {
-                    String color = statusColors.get(rawStatus.toUpperCase());
+                    Component color = statusColors.get(rawStatus.toUpperCase());
                     if (color != null) {
-                        processedMessage = miniMessage.deserialize(color).append(processedMessage);
+                        processedMessage = color.append(processedMessage);
                     }
                 }
             }
@@ -162,21 +171,17 @@ public final class ChatManager {
             // Build tag resolvers for placeholders
             TagResolver.Builder resolvers = TagResolver.builder();
 
-            // Status placeholder - parse as MiniMessage
-            if (!statusFormat.isEmpty()) {
-                resolvers.resolver(Placeholder.component("status", miniMessage.deserialize(statusFormat)));
-            } else {
-                resolvers.resolver(Placeholder.component("status", Component.empty()));
-            }
+            // Status placeholder
+            resolvers.resolver(Placeholder.component("status", statusDisplay));
 
             // Player name
             Component playerName = sourceDisplayName;
             if (nameColorsEnabled) {
                 String rawStatus = statusManager.getStatus(player);
                 if (rawStatus != null) {
-                    String color = nameColors.get(rawStatus.toUpperCase());
+                    Component color = nameColors.get(rawStatus.toUpperCase());
                     if (color != null) {
-                        playerName = miniMessage.deserialize(color).append(playerName);
+                        playerName = color.append(playerName);
                     }
                 }
             }
@@ -188,9 +193,7 @@ public final class ChatManager {
             // Deaths
             resolvers.resolver(Placeholder.unparsed("deaths", String.valueOf(deaths)));
             // Formatted deaths: [☠ N]
-            resolvers.resolver(Placeholder.component("deaths_formatted",
-                    miniMessage.deserialize("<dark_gray>[</dark_gray><red>☠</red> <red>" + deaths
-                            + "</red><dark_gray>]</dark_gray>")));
+            resolvers.resolver(Placeholder.component("deaths_formatted", deathTracker.formatDeaths(deaths)));
 
             // Country info
             resolvers.resolver(Placeholder.unparsed("country", country));
@@ -212,19 +215,21 @@ public final class ChatManager {
             // If PAPI returns a legacy color code &c, MiniMessage won't parse it unless we
             // convert it.
 
-            String formatWithPapi = de.stylelabor.statusplugin.util.PlaceholderUtil.parse(player, chatFormat);
-            formatWithPapi = de.stylelabor.statusplugin.util.ColorUtil.convertLegacyToMiniMessage(formatWithPapi);
+            String formatWithPapi = PlaceholderUtil.parse(player, chatFormat);
+            formatWithPapi = ColorUtil.convertLegacyToMiniMessage(formatWithPapi);
 
             return miniMessage.deserialize(formatWithPapi, resolvers.build());
         }
     }
 
     /**
-     * Make URLs in a component clickable
+     * Build the replacement that makes URLs in a component clickable
      */
     @NotNull
-    private Component makeUrlsClickable(@NotNull Component message) {
-        TextReplacementConfig config = TextReplacementConfig.builder()
+    private TextReplacementConfig createUrlReplacement() {
+        String style = urlStyle;
+        Component hover = urlHover;
+        return TextReplacementConfig.builder()
                 .match(URL_PATTERN)
                 .replacement((result, builder) -> {
                     String url = result.group(1);
@@ -233,9 +238,9 @@ public final class ChatManager {
                     Component urlComponent = Component.text(url);
 
                     // Apply style from config (MiniMessage) safely without parsing tags in raw url
-                    if (!urlStyle.isEmpty()) {
+                    if (!style.isEmpty()) {
                         TagResolver resolver = TagResolver.resolver(Placeholder.component("content", Component.text(url)));
-                        urlComponent = miniMessage.deserialize(urlStyle + "<content>", resolver);
+                        urlComponent = miniMessage.deserialize(style + "<content>", resolver);
                     } else {
                         // Default fallback if empty
                         urlComponent = urlComponent.color(NamedTextColor.AQUA);
@@ -245,15 +250,13 @@ public final class ChatManager {
                     urlComponent = urlComponent.clickEvent(ClickEvent.openUrl(url));
 
                     // Add hover event if configured
-                    if (urlHover != null && !urlHover.isEmpty()) {
-                        urlComponent = urlComponent.hoverEvent(miniMessage.deserialize(urlHover));
+                    if (hover != null) {
+                        urlComponent = urlComponent.hoverEvent(hover);
                     }
 
                     return urlComponent;
                 })
                 .build();
-
-        return message.replaceText(config);
     }
 
     /**

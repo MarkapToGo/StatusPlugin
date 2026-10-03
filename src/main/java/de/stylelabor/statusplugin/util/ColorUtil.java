@@ -58,6 +58,10 @@ public final class ColorUtil {
      */
     @NotNull
     public static String convertLegacyToMiniMessage(@NotNull String text) {
+        // Every legacy code starts with & or §, so there is nothing to convert without them
+        if (text.indexOf('&') == -1 && text.indexOf('§') == -1) {
+            return text;
+        }
         text = text.replace('§', '&');
         // Convert &#RRGGBB to <#RRGGBB>
         Matcher hexMatcher = HEX_PATTERN.matcher(text);

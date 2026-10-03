@@ -75,8 +75,9 @@ public class PlayerListener implements Listener {
         // Update nametag
         nametagManager.updatePlayer(player);
 
-        // Update tab list for all other players (so they see this player correctly)
-        tabListManager.updateAllPlayers();
+        // Other players already receive this player's list name and team; only their
+        // header/footer (online count) changes
+        tabListManager.requestHeaderFooterRefresh();
 
         // Check for unnotified status request results (accepted or denied with reason)
         var unnotified = plugin.getRequestManager().getUnnotifiedRequests(player.getUniqueId());
@@ -122,6 +123,9 @@ public class PlayerListener implements Listener {
 
         // Remove from tab list sorting teams
         tabListManager.removePlayer(player);
+
+        // Update the online count in everyone's header/footer
+        tabListManager.requestHeaderFooterRefresh();
 
         // Save data (handled by individual managers with batched saves)
         plugin.debug(player.getName() + " quit");

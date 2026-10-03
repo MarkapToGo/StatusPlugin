@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Changed
+- Tab list refresh computes server-wide placeholders (online count, world counts, TPS, time, …) once per refresh instead of once per line and player, and parses header/footer lines without player-specific placeholders only once. With 100 players a refresh dropped from ~110 ms to ~6 ms on the main thread.
+- List names, nametag team prefixes and header/footer are only sent when they changed. Previously every refresh broadcast ~20,000 packets at 100 players (~0.7 MB/s); now only the header/footer is re-sent.
+- Joining no longer refreshes every online player's tab list; others only get an updated header/footer (online count) on the next tick, shared by all joins in that tick. The online count now also updates right after a player quits.
+- Chat messages are rendered once instead of once per viewer (`ChatRenderer.viewerUnaware`), ~100× less work per message at 100 players. This also avoids one main-thread PlaceholderAPI lookup per viewer when the chat format contains PAPI placeholders.
+- Parsed status, death count, name/status color and URL hover components are cached instead of re-parsed on every use; config values like `tablist.enabled`, `chat.enabled` and the sorting priority are read once per (re)load.
+
+---
+
 ## [7.1.3] - 2026-09-09
 
 ### Fixed

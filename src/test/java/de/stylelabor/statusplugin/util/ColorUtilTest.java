@@ -35,6 +35,18 @@ public class ColorUtilTest {
     }
 
     @Test
+    public void testConvertWithoutLegacyCodesKeepsText() {
+        String input = "<gradient:gold:yellow><bold>★ SERVER ★</bold></gradient> <player>";
+        assertSame(input, ColorUtil.convertLegacyToMiniMessage(input));
+    }
+
+    @Test
+    public void testConvertSectionSignCodes() {
+        assertEquals("<red>Hello <bold>World", ColorUtil.convertLegacyToMiniMessage("§cHello §lWorld"));
+        assertEquals("<#FF00FF>x", ColorUtil.convertLegacyToMiniMessage("&#FF00FFx"));
+    }
+
+    @Test
     public void testCornerBrackets() {
         // Brackets around MiniMessage
         assertTrue(ColorUtil.hasCornerBrackets("[<gradient:#65FF64:#65FF64>TEST</gradient>]"));

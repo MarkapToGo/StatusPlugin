@@ -31,6 +31,9 @@ public final class StatusManager {
     // Status restrictions (status key -> permission)
     private final Map<String, String> statusRestrictions = new HashMap<>();
 
+    // Tab list sorting order from config.yml
+    private List<String> sortingPriority = List.of();
+
     public StatusManager(@NotNull StatusPlugin plugin, @NotNull ConfigManager configManager) {
         this.plugin = plugin;
         this.configManager = configManager;
@@ -73,6 +76,8 @@ public final class StatusManager {
                 }
             }
         }
+
+        sortingPriority = List.copyOf(configManager.getConfig().getStringList("tablist.sorting.priority"));
 
         plugin.debug("Loaded " + statusOptions.size() + " status options");
     }
@@ -272,7 +277,7 @@ public final class StatusManager {
             return 999; // "No Status" is always last
         }
 
-        List<String> priority = configManager.getConfig().getStringList("tablist.sorting.priority");
+        List<String> priority = sortingPriority;
         int index = priority.indexOf(statusKey.toUpperCase());
 
         if (index >= 0) {

@@ -2,6 +2,8 @@ package de.stylelabor.statusplugin.manager;
 
 import de.stylelabor.statusplugin.StatusPlugin;
 import de.stylelabor.statusplugin.config.ConfigManager;
+import de.stylelabor.statusplugin.util.ColorUtil;
+import de.stylelabor.statusplugin.util.PlaceholderUtil;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
@@ -14,12 +16,14 @@ import org.bukkit.scoreboard.Scoreboard;
 import org.bukkit.scoreboard.Team;
 import org.bukkit.configuration.ConfigurationSection;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.text.DecimalFormat;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Pattern;
 
 /**
  * Manages tab list formatting including header, footer, player list names, and
@@ -31,6 +35,11 @@ public final class TabListManager {
     private static final DecimalFormat MSPT_FORMAT = new DecimalFormat("#0.0");
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
     private static final String SORT_TEAM_PREFIX = "sp_sort_";
+    private static final Pattern NON_ALPHANUMERIC = Pattern.compile("[^a-zA-Z0-9]");
+
+    // Tags that render differently for each player. Header/footer lines without them
+    // (and without PAPI placeholders) are parsed once per refresh and shared.
+    private static final List<String> PLAYER_TAGS = List.of("<status", "<player", "<deaths", "<country");
 
     private final StatusPlugin plugin;
     private final ConfigManager configManager;
@@ -43,15 +52,29 @@ public final class TabListManager {
     private BukkitTask updateTask;
     private final AtomicInteger rotatingIndex = new AtomicInteger(0);
 
+    private boolean enabled;
     private String playerFormat;
     private int refreshInterval;
     private boolean sortingEnabled;
 
-    // Track teams we've created for sorting
-    private final Set<String> createdSortTeams = new HashSet<>();
-
     private boolean nameColorsEnabled;
-    private final Map<String, String> nameColors = new HashMap<>();
+    private final Map<String, Component> nameColors = new HashMap<>();
+
+    // Header/footer/rotating lines, converted from legacy colors once on load
+    private final List<TemplateLine> headerLines = new ArrayList<>();
+    private final List<TemplateLine> footerLines = new ArrayList<>();
+    private final List<TemplateLine> rotatingMessages = new ArrayList<>();
+    private boolean rotatingEnabled;
+
+    // Sort team of each player, so a status change only touches the old and new team
+    private final Map<UUID, String> playerTeams = new HashMap<>();
+    // Parsed nametag prefix per status format
+    private final Map<String, Component> teamPrefixes = new HashMap<>();
+
+    private boolean headerFooterRefreshQueued;
+
+    private record TemplateLine(@NotNull String text, boolean perPlayer, boolean usesRotating) {
+    }
 
     public TabListManager(@NotNull StatusPlugin plugin,
             @NotNull ConfigManager configManager,
@@ -73,8 +96,10 @@ public final class TabListManager {
      */
     private void loadConfig() {
         var config = configManager.getConfig();
+        enabled = config.getBoolean("tablist.enabled", true);
+
         String rawFormat = config.getString("tablist.player-format", "<status> <gray><player></gray>");
-        playerFormat = de.stylelabor.statusplugin.util.ColorUtil.convertLegacyToMiniMessage(rawFormat);
+        playerFormat = ColorUtil.convertLegacyToMiniMessage(rawFormat);
 
         refreshInterval = config.getInt("tablist.refresh-interval", 5);
         sortingEnabled = config.getBoolean("tablist.sorting.enabled", true);
@@ -87,9 +112,27 @@ public final class TabListManager {
                 String color = nameSection.getString(key);
                 if (color != null) {
                     nameColors.put(key.toUpperCase(),
-                            de.stylelabor.statusplugin.util.ColorUtil.convertLegacyToMiniMessage(color));
+                            miniMessage.deserialize(ColorUtil.convertLegacyToMiniMessage(color)));
                 }
             }
+        }
+
+        var tablistConfig = configManager.getTablist();
+        loadLines(headerLines, tablistConfig.getStringList("header.lines"));
+        loadLines(footerLines, tablistConfig.getStringList("footer.lines"));
+        loadLines(rotatingMessages, tablistConfig.getStringList("rotating.messages"));
+        rotatingEnabled = tablistConfig.getBoolean("rotating.enabled", true);
+
+        teamPrefixes.clear();
+    }
+
+    private static void loadLines(@NotNull List<TemplateLine> target, @NotNull List<String> rawLines) {
+        target.clear();
+        for (String raw : rawLines) {
+            String text = ColorUtil.convertLegacyToMiniMessage(raw);
+            String lower = text.toLowerCase(Locale.ROOT);
+            boolean perPlayer = text.indexOf('%') != -1 || PLAYER_TAGS.stream().anyMatch(lower::contains);
+            target.add(new TemplateLine(text, perPlayer, lower.contains("<rotating")));
         }
     }
 
@@ -97,7 +140,7 @@ public final class TabListManager {
      * Check if tab list formatting is enabled
      */
     public final boolean isEnabled() {
-        return configManager.getConfig().getBoolean("tablist.enabled", true);
+        return enabled;
     }
 
     /**
@@ -117,8 +160,17 @@ public final class TabListManager {
      * Update all online players' tab list
      */
     public void updateAllPlayers() {
+        if (!Bukkit.isPrimaryThread()) {
+            Bukkit.getScheduler().runTask(plugin, this::updateAllPlayers);
+            return;
+        }
+
+        if (!isEnabled())
+            return;
+
+        RefreshContext context = new RefreshContext();
         for (Player player : Bukkit.getOnlinePlayers()) {
-            updatePlayer(player);
+            updatePlayer(player, context);
         }
     }
 
@@ -134,6 +186,10 @@ public final class TabListManager {
         if (!isEnabled())
             return;
 
+        updatePlayer(player, new RefreshContext());
+    }
+
+    private void updatePlayer(@NotNull Player player, @NotNull RefreshContext context) {
         var tabIntegration = plugin.getTabPluginIntegration();
         if (tabIntegration != null && tabIntegration.isAvailable()) {
             tabIntegration.updatePlayerTabName(player);
@@ -153,7 +209,35 @@ public final class TabListManager {
         }
 
         // Update header and footer
-        updateHeaderFooter(player);
+        updateHeaderFooter(player, context);
+    }
+
+    /**
+     * Refresh the header and footer of all players on the next tick, e.g. after a
+     * join or quit changed the online count. Several requests in the same tick
+     * share one refresh.
+     */
+    public void requestHeaderFooterRefresh() {
+        if (!Bukkit.isPrimaryThread()) {
+            Bukkit.getScheduler().runTask(plugin, this::requestHeaderFooterRefresh);
+            return;
+        }
+
+        if (!isEnabled() || headerFooterRefreshQueued)
+            return;
+
+        headerFooterRefreshQueued = true;
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            headerFooterRefreshQueued = false;
+            var tabIntegration = plugin.getTabPluginIntegration();
+            if (tabIntegration != null && tabIntegration.isAvailable())
+                return;
+
+            RefreshContext context = new RefreshContext();
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                updateHeaderFooter(player, context);
+            }
+        });
     }
 
     /**
@@ -185,58 +269,47 @@ public final class TabListManager {
         int priority = statusManager.getStatusPriority(safeStatus);
 
         // Sanitize status to ensure robust alphabetical sorting
-        String sortKey = safeStatus.replaceAll("[^a-zA-Z0-9]", "").toUpperCase();
+        String sortKey = NON_ALPHANUMERIC.matcher(safeStatus).replaceAll("").toUpperCase();
 
         // Team name includes priority for sorting (000-999), sortKey, and player name
+        String playerName = player.getName();
         String teamName = SORT_TEAM_PREFIX + String.format("%03d", priority) + "_" +
                 (sortKey.isEmpty() ? "" : sortKey + "_") +
-                player.getName().substring(0, Math.min(player.getName().length(), 8));
+                playerName.substring(0, Math.min(playerName.length(), 8));
 
-        // Remove player from any other sort teams
-        for (String existingTeamName : new ArrayList<>(createdSortTeams)) {
-            if (existingTeamName.equals(teamName)) continue;
-            Team t = scoreboard.getTeam(existingTeamName);
-            if (t != null) {
-                if (t.hasEntry(player.getName())) {
-                    t.removeEntry(player.getName());
-                }
-                if (t.getSize() == 0) {
-                    t.unregister();
-                    createdSortTeams.remove(existingTeamName);
-                }
-            } else {
-                createdSortTeams.remove(existingTeamName);
-            }
+        // Leave the previous team if the status (and therefore the team) changed
+        String previousTeam = playerTeams.put(player.getUniqueId(), teamName);
+        if (previousTeam != null && !previousTeam.equals(teamName)) {
+            leaveTeam(playerName, previousTeam);
         }
 
         Team team = scoreboard.getTeam(teamName);
         if (team == null) {
             team = scoreboard.registerNewTeam(teamName);
-            createdSortTeams.add(teamName);
+            plugin.debug("Created team " + teamName + " for " + playerName);
         }
 
         // Set team prefix (status) if nametags are enabled
+        Component prefix = Component.empty();
         if (nametagEnabled && status != null && !status.isEmpty()) {
             String statusFormat = statusManager.getStatusFormatByKey(status);
             if (!statusFormat.isEmpty()) {
-                team.prefix(plugin.parseMessage(statusFormat + " "));
-            } else {
-                team.prefix(Component.empty());
+                prefix = teamPrefixes.computeIfAbsent(statusFormat, format -> plugin.parseMessage(format + " "));
             }
-        } else {
-            team.prefix(Component.empty());
+        }
+        // Every prefix change is broadcast to all players, so only send real changes
+        if (!prefix.equals(team.prefix())) {
+            team.prefix(prefix);
         }
 
         // Add player to team
-        if (!team.hasEntry(player.getName())) {
-            team.addEntry(player.getName());
+        if (!team.hasEntry(playerName)) {
+            team.addEntry(playerName);
         }
-
-        plugin.debug("Updated team for " + player.getName() + " with team " + teamName);
     }
 
     /**
-     * Remove a player from sorting teams
+     * Remove a player from their sorting team
      */
     private void removeFromSortTeams(@NotNull Player player) {
         if (!Bukkit.isPrimaryThread()) {
@@ -244,20 +317,26 @@ public final class TabListManager {
             return;
         }
 
-        for (String teamName : new ArrayList<>(createdSortTeams)) {
-            Team team = scoreboard.getTeam(teamName);
-            if (team != null) {
-                if (team.hasEntry(player.getName())) {
-                    team.removeEntry(player.getName());
-                }
-                // Clean up empty teams
-                if (team.getSize() == 0) {
-                    team.unregister();
-                    createdSortTeams.remove(teamName);
-                }
-            } else {
-                createdSortTeams.remove(teamName);
-            }
+        String teamName = playerTeams.remove(player.getUniqueId());
+        if (teamName != null) {
+            leaveTeam(player.getName(), teamName);
+        }
+    }
+
+    /**
+     * Remove an entry from a sort team and unregister the team once it is empty
+     */
+    private void leaveTeam(@NotNull String playerName, @NotNull String teamName) {
+        Team team = scoreboard.getTeam(teamName);
+        if (team == null)
+            return;
+
+        if (team.hasEntry(playerName)) {
+            team.removeEntry(playerName);
+        }
+        // Clean up empty teams
+        if (team.getSize() == 0) {
+            team.unregister();
         }
     }
 
@@ -281,88 +360,52 @@ public final class TabListManager {
      * Update a player's list name
      */
     public void updatePlayerListName(@NotNull Player player) {
-        String statusFormat = statusManager.getStatusFormat(player.getUniqueId());
-        int deaths = deathTracker.getDeaths(player.getUniqueId());
-        String country = countryManager.getCountry(player.getUniqueId()).orElse("");
-        String countryCode = countryManager.getCountryCode(player.getUniqueId()).orElse("");
-
-        TagResolver.Builder resolvers = TagResolver.builder();
-
-        if (!statusFormat.isEmpty()) {
-            resolvers.resolver(Placeholder.component("status", miniMessage.deserialize(statusFormat)));
-        } else {
-            resolvers.resolver(Placeholder.component("status", Component.empty()));
-        }
+        TagResolver.Builder resolvers = playerResolvers(player);
 
         Component playerName = Component.text(player.getName());
         if (nameColorsEnabled) {
             String rawStatus = statusManager.getStatus(player);
             if (rawStatus != null) {
-                String color = nameColors.get(rawStatus.toUpperCase());
+                Component color = nameColors.get(rawStatus.toUpperCase());
                 if (color != null) {
-                    playerName = miniMessage.deserialize(color).append(playerName);
+                    playerName = color.append(playerName);
                 }
             }
         }
         resolvers.resolver(Placeholder.component("player", playerName));
-        resolvers.resolver(Placeholder.unparsed("deaths", String.valueOf(deaths)));
-        // Formatted deaths: [☠ N]
-        resolvers.resolver(Placeholder.component("deaths_formatted",
-                miniMessage.deserialize(
-                        "<dark_gray>[</dark_gray><red>☠</red> <red>" + deaths + "</red><dark_gray>]</dark_gray>")));
-        resolvers.resolver(Placeholder.unparsed("country", country));
-        resolvers.resolver(Placeholder.unparsed("countrycode", countryCode));
 
-        String formatWithPapi = de.stylelabor.statusplugin.util.PlaceholderUtil.parse(player, playerFormat);
-        formatWithPapi = de.stylelabor.statusplugin.util.ColorUtil.convertLegacyToMiniMessage(formatWithPapi);
+        String formatWithPapi = PlaceholderUtil.parse(player, playerFormat);
+        formatWithPapi = ColorUtil.convertLegacyToMiniMessage(formatWithPapi);
 
         Component listName = miniMessage.deserialize(formatWithPapi, resolvers.build());
 
         if (Bukkit.isPrimaryThread()) {
-            if (player.isOnline()) {
-                player.playerListName(listName);
-            }
+            applyListName(player, listName);
         } else {
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                if (player.isOnline()) {
-                    player.playerListName(listName);
-                }
-            });
+            Bukkit.getScheduler().runTask(plugin, () -> applyListName(player, listName));
+        }
+    }
+
+    /**
+     * Set the list name unless the player already has it; every change is
+     * broadcast to all players.
+     */
+    private void applyListName(@NotNull Player player, @NotNull Component listName) {
+        if (player.isOnline() && !listName.equals(player.playerListName())) {
+            player.playerListName(listName);
         }
     }
 
     /**
      * Update header and footer for a player
      */
-    private void updateHeaderFooter(@NotNull Player player) {
-        var tablistConfig = configManager.getTablist();
+    private void updateHeaderFooter(@NotNull Player player, @NotNull RefreshContext context) {
+        Component header = buildMultilineComponent(headerLines, player, context);
+        Component footer = buildMultilineComponent(footerLines, player, context);
 
-        // Build header
-        List<String> headerLines = tablistConfig.getStringList("header.lines");
-        headerLines.replaceAll(de.stylelabor.statusplugin.util.ColorUtil::convertLegacyToMiniMessage);
-        Component header = buildMultilineComponent(headerLines, player);
-
-        // Rotating messages are now handled via <rotating> placeholder
-        // which can be placed anywhere in header.lines or footer.lines
-
-        // Build footer
-        List<String> footerLines = tablistConfig.getStringList("footer.lines");
-        footerLines.replaceAll(de.stylelabor.statusplugin.util.ColorUtil::convertLegacyToMiniMessage);
-        Component footer = buildMultilineComponent(footerLines, player);
-
-        // Apply header and footer
-        Component finalHeader = header;
-        Component finalFooter = footer;
-        if (Bukkit.isPrimaryThread()) {
-            if (player.isOnline()) {
-                player.sendPlayerListHeaderAndFooter(finalHeader, finalFooter);
-            }
-        } else {
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                if (player.isOnline()) {
-                    player.sendPlayerListHeaderAndFooter(finalHeader, finalFooter);
-                }
-            });
+        if (player.isOnline()
+                && !(header.equals(player.playerListHeader()) && footer.equals(player.playerListFooter()))) {
+            player.sendPlayerListHeaderAndFooter(header, footer);
         }
     }
 
@@ -370,117 +413,157 @@ public final class TabListManager {
      * Build a multi-line component from a list of lines
      */
     @NotNull
-    private Component buildMultilineComponent(@NotNull List<String> lines, @NotNull Player player) {
+    private Component buildMultilineComponent(@NotNull List<TemplateLine> lines, @NotNull Player player,
+            @NotNull RefreshContext context) {
         if (lines.isEmpty()) {
             return Component.empty();
         }
 
-        Component result = parseWithPlaceholders(lines.get(0), player);
+        Component result = context.line(lines.get(0), player);
         for (int i = 1; i < lines.size(); i++) {
-            result = result.appendNewline().append(parseWithPlaceholders(lines.get(i), player));
+            result = result.appendNewline().append(context.line(lines.get(i), player));
         }
         return result;
     }
 
     /**
-     * Parse a string with all available placeholders
+     * Placeholders that depend on the player and are shared by the list name and
+     * header/footer (<player> differs between the two and is added by the caller).
      */
     @NotNull
-    private Component parseWithPlaceholders(@NotNull String text, @NotNull Player player) {
-        return parseWithPlaceholders(text, player, false);
+    private TagResolver.Builder playerResolvers(@NotNull Player player) {
+        UUID uuid = player.getUniqueId();
+        int deaths = deathTracker.getDeaths(uuid);
+        return TagResolver.builder()
+                .resolver(Placeholder.component("status", statusManager.getStatusDisplay(uuid)))
+                .resolver(Placeholder.unparsed("deaths", String.valueOf(deaths)))
+                // Formatted deaths: [☠ N]
+                .resolver(Placeholder.component("deaths_formatted", deathTracker.formatDeaths(deaths)))
+                .resolver(Placeholder.unparsed("country", countryManager.getCountry(uuid).orElse("")))
+                .resolver(Placeholder.unparsed("countrycode", countryManager.getCountryCode(uuid).orElse("")));
     }
 
     /**
-     * Parse a string with all available placeholders
-     * 
-     * @param isNested set to true if parsing the rotating message itself to prevent
-     *                 infinite recursion
+     * Values shared by every player during one refresh. Server placeholders are
+     * computed once instead of once per line and player, and lines without
+     * player-specific placeholders are parsed once.
      */
-    @NotNull
-    private Component parseWithPlaceholders(@NotNull String text, @NotNull Player player, boolean isNested) {
-        // Parse PAPI placeholders first
-        String textWithPapi = de.stylelabor.statusplugin.util.PlaceholderUtil.parse(player, text);
-        // Convert any legacy colors key PAPI might have returned
-        textWithPapi = de.stylelabor.statusplugin.util.ColorUtil.convertLegacyToMiniMessage(textWithPapi);
+    private final class RefreshContext {
 
-        String statusFormat = statusManager.getStatusFormat(player.getUniqueId());
-        int deaths = deathTracker.getDeaths(player.getUniqueId());
-        String country = countryManager.getCountry(player.getUniqueId()).orElse("");
-        String countryCode = countryManager.getCountryCode(player.getUniqueId()).orElse("");
+        private final TagResolver serverResolvers;
+        private final @Nullable TemplateLine rotatingLine;
+        private final Map<TemplateLine, Component> sharedLines = new IdentityHashMap<>();
+        private @Nullable Component sharedRotating;
 
-        TagResolver.Builder resolvers = TagResolver.builder();
+        // Per-player values, reused for all lines of the player currently being built
+        private @Nullable Player currentPlayer;
+        private @Nullable TagResolver currentResolvers;
 
-        // Player-specific placeholders
-        if (!statusFormat.isEmpty()) {
-            resolvers.resolver(Placeholder.component("status", miniMessage.deserialize(statusFormat)));
-        } else {
-            resolvers.resolver(Placeholder.component("status", Component.empty()));
-        }
-        resolvers.resolver(Placeholder.unparsed("player", player.getName()));
-        resolvers.resolver(Placeholder.unparsed("deaths", String.valueOf(deaths)));
-        // Formatted deaths: [☠ N]
-        resolvers.resolver(Placeholder.component("deaths_formatted",
-                miniMessage.deserialize(
-                        "<dark_gray>[</dark_gray><red>☠</red> <red>" + deaths + "</red><dark_gray>]</dark_gray>")));
-        resolvers.resolver(Placeholder.unparsed("country", country));
-        resolvers.resolver(Placeholder.unparsed("countrycode", countryCode));
-
-        // Rotating message placeholder
-        // Only resolve if we are not already inside a rotating message
-        if (!isNested) {
-            if (configManager.getTablist().getBoolean("rotating.enabled", true)) {
-                List<String> rotatingMessages = configManager.getTablist().getStringList("rotating.messages");
-                if (!rotatingMessages.isEmpty()) {
-                    int index = (rotatingIndex.get() & Integer.MAX_VALUE) % rotatingMessages.size();
-                    String rotatingLine = rotatingMessages.get(index);
-                    // Convert legacy color codes in the rotating message
-                    rotatingLine = de.stylelabor.statusplugin.util.ColorUtil.convertLegacyToMiniMessage(rotatingLine);
-                    // Parse placeholders inside the rotating message itself
-                    resolvers.resolver(
-                            Placeholder.component("rotating", parseWithPlaceholders(rotatingLine, player, true)));
-                } else {
-                    resolvers.resolver(Placeholder.component("rotating", Component.empty()));
+        RefreshContext() {
+            int online = 0;
+            int overworld = 0;
+            int nether = 0;
+            int end = 0;
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                if (isVanished(player))
+                    continue;
+                online++;
+                World.Environment environment = player.getWorld().getEnvironment();
+                if (environment == World.Environment.NORMAL) {
+                    overworld++;
+                } else if (environment == World.Environment.NETHER) {
+                    nether++;
+                } else if (environment == World.Environment.THE_END) {
+                    end++;
                 }
-            } else {
-                resolvers.resolver(Placeholder.component("rotating", Component.empty()));
             }
-        } else {
-            // Prevent recursion
-            resolvers.resolver(Placeholder.component("rotating", Component.empty()));
+
+            double[] tps = Bukkit.getTPS();
+            serverResolvers = TagResolver.resolver(
+                    Placeholder.unparsed("online", String.valueOf(online)),
+                    Placeholder.unparsed("max", String.valueOf(Bukkit.getMaxPlayers())),
+                    // TPS and performance
+                    Placeholder.unparsed("tps", TPS_FORMAT.format(tps[0])),
+                    Placeholder.unparsed("tps_5m", TPS_FORMAT.format(tps[1])),
+                    Placeholder.unparsed("tps_15m", TPS_FORMAT.format(tps[2])),
+                    Placeholder.component("performance", getPerformanceIndicator(tps[0])),
+                    Placeholder.unparsed("mspt", MSPT_FORMAT.format(Bukkit.getAverageTickTime())),
+                    Placeholder.unparsed("time", LocalTime.now().format(TIME_FORMAT)),
+                    // World player counts
+                    Placeholder.unparsed("overworld", String.valueOf(overworld)),
+                    Placeholder.unparsed("nether", String.valueOf(nether)),
+                    Placeholder.unparsed("end", String.valueOf(end)),
+                    Placeholder.unparsed("total_deaths", formatNumber(deathTracker.getTotalDeaths())));
+
+            if (rotatingEnabled && !rotatingMessages.isEmpty()) {
+                int index = (rotatingIndex.get() & Integer.MAX_VALUE) % rotatingMessages.size();
+                rotatingLine = rotatingMessages.get(index);
+            } else {
+                rotatingLine = null;
+            }
         }
 
-        // Server placeholders
-        long onlineCount = Bukkit.getOnlinePlayers().stream().filter(p -> !isVanished(p)).count();
-        resolvers.resolver(Placeholder.unparsed("online", String.valueOf(onlineCount)));
-        resolvers.resolver(Placeholder.unparsed("max", String.valueOf(Bukkit.getMaxPlayers())));
+        /**
+         * Parse a header/footer line for a player
+         */
+        @NotNull
+        Component line(@NotNull TemplateLine line, @NotNull Player player) {
+            boolean perPlayer = line.perPlayer()
+                    || (line.usesRotating() && rotatingLine != null && rotatingLine.perPlayer());
+            Component rotating = line.usesRotating() ? rotating(player) : Component.empty();
+            if (!perPlayer) {
+                Component shared = sharedLines.get(line);
+                if (shared == null) {
+                    shared = parse(line.text(), player,
+                            TagResolver.resolver(serverResolvers, Placeholder.component("rotating", rotating)));
+                    sharedLines.put(line, shared);
+                }
+                return shared;
+            }
+            return parse(line.text(), player,
+                    TagResolver.resolver(resolversFor(player), Placeholder.component("rotating", rotating)));
+        }
 
-        // TPS and performance
-        double[] tps = Bukkit.getTPS();
-        resolvers.resolver(Placeholder.unparsed("tps", TPS_FORMAT.format(tps[0])));
-        resolvers.resolver(Placeholder.unparsed("tps_5m", TPS_FORMAT.format(tps[1])));
-        resolvers.resolver(Placeholder.unparsed("tps_15m", TPS_FORMAT.format(tps[2])));
-        resolvers.resolver(Placeholder.component("performance", getPerformanceIndicator(tps[0])));
+        /**
+         * The current rotating message; placeholders inside it are resolved, but a
+         * nested <rotating> is not
+         */
+        @NotNull
+        private Component rotating(@NotNull Player player) {
+            if (rotatingLine == null) {
+                return Component.empty();
+            }
+            if (!rotatingLine.perPlayer()) {
+                if (sharedRotating == null) {
+                    sharedRotating = parse(rotatingLine.text(), player,
+                            TagResolver.resolver(serverResolvers, Placeholder.component("rotating", Component.empty())));
+                }
+                return sharedRotating;
+            }
+            return parse(rotatingLine.text(), player,
+                    TagResolver.resolver(resolversFor(player), Placeholder.component("rotating", Component.empty())));
+        }
 
-        // MSPT
-        double mspt = Bukkit.getAverageTickTime();
-        resolvers.resolver(Placeholder.unparsed("mspt", MSPT_FORMAT.format(mspt)));
+        @NotNull
+        private TagResolver resolversFor(@NotNull Player player) {
+            if (currentPlayer != player || currentResolvers == null) {
+                currentPlayer = player;
+                currentResolvers = playerResolvers(player)
+                        .resolver(Placeholder.unparsed("player", player.getName()))
+                        .resolver(serverResolvers)
+                        .build();
+            }
+            return currentResolvers;
+        }
 
-        // Time
-        resolvers.resolver(Placeholder.unparsed("time", LocalTime.now().format(TIME_FORMAT)));
-
-        // World player counts
-        resolvers.resolver(
-                Placeholder.unparsed("overworld", String.valueOf(getPlayersInEnvironment(World.Environment.NORMAL))));
-        resolvers.resolver(
-                Placeholder.unparsed("nether", String.valueOf(getPlayersInEnvironment(World.Environment.NETHER))));
-        resolvers.resolver(
-                Placeholder.unparsed("end", String.valueOf(getPlayersInEnvironment(World.Environment.THE_END))));
-
-        // Total deaths
-        long totalDeaths = deathTracker.getTotalDeaths();
-        resolvers.resolver(Placeholder.unparsed("total_deaths", formatNumber(totalDeaths)));
-
-        return miniMessage.deserialize(textWithPapi, resolvers.build());
+        @NotNull
+        private Component parse(@NotNull String text, @NotNull Player player, @NotNull TagResolver resolvers) {
+            // Parse PAPI placeholders first
+            String textWithPapi = PlaceholderUtil.parse(player, text);
+            // Convert any legacy colors key PAPI might have returned
+            textWithPapi = ColorUtil.convertLegacyToMiniMessage(textWithPapi);
+            return miniMessage.deserialize(textWithPapi, resolvers);
+        }
     }
 
     /**
@@ -499,19 +582,6 @@ public final class TabListManager {
             color = "<red>";
         }
         return miniMessage.deserialize(color + TPS_FORMAT.format(Math.min(tps, 20.0)) + " TPS");
-    }
-
-    /**
-     * Get the number of players in a specific world environment
-     */
-    private int getPlayersInEnvironment(@NotNull World.Environment environment) {
-        int count = 0;
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            if (!isVanished(player) && player.getWorld().getEnvironment() == environment) {
-                count++;
-            }
-        }
-        return count;
     }
 
     /**
@@ -558,7 +628,7 @@ public final class TabListManager {
                 team.unregister();
             }
         }
-        createdSortTeams.clear();
+        playerTeams.clear();
     }
 
     /**

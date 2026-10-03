@@ -2,6 +2,8 @@ package de.stylelabor.statusplugin.manager;
 
 import de.stylelabor.statusplugin.StatusPlugin;
 import de.stylelabor.statusplugin.config.ConfigManager;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Bukkit;
 import org.bukkit.Statistic;
 import org.bukkit.entity.Player;
@@ -24,6 +26,9 @@ public final class DeathTracker {
 
     // Cache of player deaths (UUID -> death count)
     private final Map<UUID, Integer> playerDeaths = new ConcurrentHashMap<>();
+
+    // Parsed "[☠ N]" components by death count, shared by chat and tab list
+    private final Map<Integer, Component> formattedDeaths = new ConcurrentHashMap<>();
 
     // Total server deaths
     private final AtomicLong totalDeaths = new AtomicLong(0);
@@ -140,6 +145,15 @@ public final class DeathTracker {
      */
     public int getDeaths(@NotNull Player player) {
         return getDeaths(player.getUniqueId());
+    }
+
+    /**
+     * Get a death count formatted as [☠ N]
+     */
+    @NotNull
+    public Component formatDeaths(int deaths) {
+        return formattedDeaths.computeIfAbsent(deaths, count -> MiniMessage.miniMessage().deserialize(
+                "<dark_gray>[</dark_gray><red>☠</red> <red>" + count + "</red><dark_gray>]</dark_gray>"));
     }
 
     /**
