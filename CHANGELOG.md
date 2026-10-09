@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [7.1.5] - 2026-10-09
+
+### Added
+- Online admins (`statusplugin.admin`) are notified when a player suggests a status, with a clickable `[View]` that opens `/status-admin requests list`. The message is `admin-requests-new` in `language.yml`.
+
+---
+
 ## [7.1.4] - 2026-10-03
 
 ### Changed

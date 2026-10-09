@@ -8,6 +8,7 @@ import io.papermc.paper.command.brigadier.BasicCommand;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
+import org.bukkit.Bukkit;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
@@ -107,6 +108,17 @@ public class StatusSuggestCommand implements BasicCommand {
                 Placeholder.unparsed("id", request.id()),
                 Placeholder.component("status_display", statusDisplay));
         player.sendMessage(formatted);
+
+        // Notify online admins about the new suggestion
+        Component adminNotice = plugin.getMiniMessage().deserialize(configManager.getMessage("admin-requests-new"),
+                Placeholder.unparsed("id", request.id()),
+                Placeholder.unparsed("player", player.getName()),
+                Placeholder.component("status_display", statusDisplay));
+        for (Player online : Bukkit.getOnlinePlayers()) {
+            if (online.hasPermission("statusplugin.admin") && !online.equals(player)) {
+                online.sendMessage(adminNotice);
+            }
+        }
     }
 
     private void showInfo(@NotNull Player player) {
