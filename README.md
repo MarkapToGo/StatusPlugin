@@ -18,7 +18,7 @@
   * **Rotating Messages**: Add scrolling lines with `<rotating>`.
   * **Sorting**: Sort players by rank (Owner > Admin > Member > AFK > NO STATUS).
   * **Stats**: Display deaths, country, TPS, Ping ... .
-* *Country Display**: Automatically show player flags/countries in tab/chat (GeoIP).
+* **Country Display**: Automatically show player flags/countries in tab/chat (GeoIP).
 * **Death Tracking**: count and display player deaths with custom formatting `[☠ 5]`.
 * **Integrations**:
   * **PlaceholderAPI**: Full support for placeholders.
